@@ -1,0 +1,12 @@
+# Build output
+/build/
+
+# Compiled libraries and executables
+*.o
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Editor and OS files
+.DS_Store

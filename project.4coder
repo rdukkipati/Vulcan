@@ -1,0 +1,59 @@
+version(1);
+project_name = "Vulcan";
+
+patterns = {
+"*.c",
+"*.cpp",
+"*.h",
+"*.m",
+"*.mm",
+"*.bat",
+"*.sh",
+"*.4coder",
+"*.txt",
+"*.metal",
+};
+blacklist_patterns = {
+".*",
+};
+load_paths_custom = {
+ {"."},
+};
+load_paths = {
+ { load_paths_custom, .os = "win"  },
+ { load_paths_custom, .os = "linux"},
+ { load_paths_custom, .os = "mac"  },
+};
+
+build_linux = "code/build.sh";
+run_linux = "code/run.sh";
+
+command_list = 
+{
+	{
+		.name = "build",
+		.out = "*compilation*",
+		.footer_panel = true,
+		.save_dirty_files = true,
+		.cmd =
+		{
+			{build_linux, .os = "linux"},
+		},
+	},
+
+	{
+		.name = "run",
+		.out = "*run*",
+		.footer_panel = true,
+		.save_dirty_files = true,
+		.cmd =
+		{
+			{run_linux, .os = "linux"},
+		},
+	},
+
+
+};
+
+fkey_command[1] = "build";
+fkey_command[2] = "run";
