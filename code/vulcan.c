@@ -16,12 +16,14 @@
 
 // TODO: Move these globals into structs later
 global_variable SDL_Window *Window = NULL;
-global_variable SDL_Renderer *Renderer = NULL;
+
+#if 0
 global_variable u64 LastTime = 0;
 global_variable rng RNG;
+#endif
 
 global_variable SDL_Time LastWrite = {0};
-global_variable char *GamePath = NULL;
+global_variable char *GameDLLPath = NULL;
 
 global_variable SDL_SharedObject *GameDLL = NULL;
 
@@ -36,9 +38,22 @@ game_update_and_render *GameUpdateAndRender;
 
 #include "misc.h"
 
+internal VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT MessageSeverity, VkDebugUtilsMessageTypeFlagsEXT MessageType, const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData)
+{
+    (void)MessageSeverity;
+    (void)MessageType;
+    (void)pUserData;
+    
+    SDL_Log("Validation Layer: %s", pCallbackData->pMessage);
+    
+    return VK_FALSE;
+}
 
 SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
 {
+    (void)AppState;
+    (void)argc;
+    (void)argv;
     
     InitMemory();
     if(Memory.PermanentStorage == MAP_FAILED)
@@ -80,7 +95,7 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     
 #if DEBUG
     
-    // NOTE: if debug, add debug extensions and validation layers. Verify that the debug extensions and validation layers are available.
+    // NOTE: if debug, add debug extensions and validation layers. Verify that the debug extensions and validation layers are available by enumerating available extensions and layers and looping through them
     const char *ExtraExtensions[] = 
     {
         VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
@@ -177,11 +192,26 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     u32 EnabledLayerCount = ArrayCount(ValidationLayers);
     const char *const *EnabledLayerNames = ValidationLayers;
     
+    VkDebugUtilsMessengerCreateInfoEXT DebugUtilsMessengerCreateInfo = 
+    {
+        .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+        .pNext = NULL,
+        .flags = 0,
+        .messageSeverity =  VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+        .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+        .pfnUserCallback = VulkanDebugCallback,
+        .pUserData = NULL,
+    };
+    
+    const void *pNext = &DebugUtilsMessengerCreateInfo;
+    
 #else
     
     const char **Extensions = Extensions_SDL;
     u32 EnabledLayerCount = 0;
     const char *const *EnabledLayerNames = NULL;
+    
+    const void *pNext = NULL;
     
 #endif
     
@@ -200,7 +230,7 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     VkInstanceCreateInfo CreateInfo = 
     {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-        .pNext = NULL,
+        .pNext = pNext,
         // NOTE: flags is 0 for linux and windows. On macOS with MoltenVK, flags would be set for portability features
         .flags = 0,
         .pApplicationInfo = &AppInfo,
@@ -211,21 +241,44 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     };
     
     VkInstance VulkanInstance;
-    if(vkCreateInstance(&CreateInfo, NULL, &VulkanInstance) != VK_SUCCESS)
     {
-        SDL_Log("vkCreateInstance failed");
+        VkResult Result = vkCreateInstance(&CreateInfo, NULL, &VulkanInstance);
+        if(Result != VK_SUCCESS)
+        {
+            SDL_Log("vkCreateInstance failed: %d", Result);
+            return SDL_APP_FAILURE;
+        }
+    }
+    
+#if DEBUG
+    // NOTE: so overview, we create a DebugUtilsMessenger object which is a handle that manages our Debug Callback function that logs our validation layers' messages
+    
+    // NOTE: have to load function first because it's part of an extension
+    PFN_vkCreateDebugUtilsMessengerEXT CreateDebugUtilsMessenger = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(VulkanInstance, "vkCreateDebugUtilsMessengerEXT");
+    if(!CreateDebugUtilsMessenger)
+    {
+        SDL_Log("Loading CreateDebugUtilsMessengerEXT function failed");
         return SDL_APP_FAILURE;
     }
     
-    
+    VkDebugUtilsMessengerEXT DebugUtilsMessenger;
+    {
+        VkResult Result = CreateDebugUtilsMessenger(VulkanInstance, &DebugUtilsMessengerCreateInfo, NULL, &DebugUtilsMessenger);
+        if(Result != VK_SUCCESS)
+        {
+            SDL_Log("Creating debug messenger failed: %d", Result);
+            return SDL_APP_FAILURE;
+        }
+    }
+#endif
     
     
     
     
     // NOTE: asprintf here appends the name of the game dll to the location of the executable
-    SDL_asprintf(&GamePath, "%sgame.so", SDL_GetBasePath());
+    SDL_asprintf(&GameDLLPath, "%sgame.so", SDL_GetBasePath());
     SDL_LoadGameCode();
-    LastWrite = SDL_GetLastWriteTime(GamePath);
+    LastWrite = SDL_GetLastWriteTime(GameDLLPath);
     
     return SDL_APP_CONTINUE;
     
@@ -233,6 +286,7 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
 
 SDL_AppResult SDL_AppEvent(void *AppState, SDL_Event *Event)
 {
+    (void)AppState;
     
     if(Event->type == SDL_EVENT_QUIT)
     {
@@ -244,7 +298,9 @@ SDL_AppResult SDL_AppEvent(void *AppState, SDL_Event *Event)
 
 SDL_AppResult SDL_AppIterate(void *AppState)
 {
-    SDL_Time NewWrite = SDL_GetLastWriteTime(GamePath);
+    (void)AppState;
+    
+    SDL_Time NewWrite = SDL_GetLastWriteTime(GameDLLPath);
     if(NewWrite != LastWrite)
     {
         LastWrite = NewWrite;
@@ -264,9 +320,10 @@ SDL_AppResult SDL_AppIterate(void *AppState)
     return SDL_APP_CONTINUE;
 }
 
-void SDL_AppQuit(void *AppState, SDL_AppResult result)
+void SDL_AppQuit(void *AppState, SDL_AppResult Result)
 {
-    
+    (void)AppState;
+    (void)Result;
 }
 
 

@@ -14,7 +14,7 @@ SDL_GetLastWriteTime(const char *Filename)
 internal void
 SDL_LoadGameCode(void)
 {
-    GameDLL = SDL_LoadObject(GamePath);
+    GameDLL = SDL_LoadObject(GameDLLPath);
     if(GameDLL)
     {
         GameUpdateAndRender = (game_update_and_render *)SDL_LoadFunction(GameDLL, "GameUpdateAndRender");
