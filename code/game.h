@@ -100,3 +100,72 @@ Random_f32_InRange(f32 Min, f32 Max, rng *RNG)
 {
     return Min + (Max - Min) * Random_f32(RNG);
 }
+
+typedef struct game_memory
+{
+    b32 IsInitialized;
+    
+    u64 PermanentStorageSize;
+    void *PermanentStorage;
+    
+    u64 TransientStorageSize;
+    void *TransientStorage;
+} game_memory;
+
+typedef struct game_controller_input
+{
+    b32 IsConnected;
+    
+    f32 L_StickAverageX;
+    f32 L_StickAverageY;
+    f32 R_StickAverageX;
+    f32 R_StickAverageY;
+    
+    b32 ActionUp;
+    b32 ActionDown;
+    b32 ActionLeft;
+    b32 ActionRight;
+    
+    b32 LeftShoulder;
+    b32 RightShoulder;
+    
+    b32 Back;
+    b32 Start;
+    
+    
+} game_controller_input;
+
+typedef struct game_input
+{
+    f32                   dtForFrame;
+    
+    game_controller_input Controllers[5];
+} game_input;
+
+internal game_controller_input *
+GetController(game_input *Input, i32 ControllerIndex)
+{
+    Assert(ControllerIndex < ArrayCount(Input->Controllers));
+    game_controller_input *Result = &Input->Controllers[ControllerIndex];
+    return Result;
+}
+
+typedef struct arena
+{
+    u8 *BaseAddress;
+    u64 RemainingSpace;
+} arena;
+
+
+internal void *
+PushArena(arena *Arena, u64 Size)
+{
+    Assert(Arena->RemainingSpace >= Size);
+    void *Result = Arena->BaseAddress;
+    Arena->BaseAddress += Size;
+    return Result;
+}
+
+
+#define GAME_UPDATE_AND_RENDER(name) void name(game_memory *Memory, game_input *Input)
+typedef GAME_UPDATE_AND_RENDER(game_update_and_render);
