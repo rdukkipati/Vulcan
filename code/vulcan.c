@@ -49,6 +49,19 @@ internal VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDebugCallback(VkDebugUtilsMessageS
     return VK_FALSE;
 }
 
+
+typedef struct optional_u32
+{
+    b32 HasValue;
+    u32 Value;
+} optional_u32;
+
+typedef struct queue_family_indices
+{
+    optional_u32 GraphicsFamily;
+} queue_family_indices;
+
+
 SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
 {
     (void)AppState;
@@ -62,6 +75,10 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
         return SDL_APP_FAILURE;
     }
     Input = (game_input){0};
+    
+    //=================================================================================
+    //=============================INITIALIZE SDL======================================
+    //=================================================================================
     
     SDL_SetAppMetadata("Vulcan", "1.0", "com.example.vulcan");
     
@@ -81,9 +98,16 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     
     arena Arena =
     {
+        .OriginalAddress = Memory.TransientStorage,
         .BaseAddress = Memory.TransientStorage,
         .RemainingSpace = Memory.TransientStorageSize,
     };
+    
+    
+    
+    //=================================================================================
+    //====================GRAB VULKAN INSTANCE EXTENSIONS FOR SDL======================
+    //=================================================================================
     
     u32 ExtensionsCount = 0;
     const char *const *Extensions_SDL = SDL_Vulkan_GetInstanceExtensions(&ExtensionsCount);
@@ -95,7 +119,12 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     
 #if DEBUG
     
+    //=================================================================================
+    //=====================DEBUG INSTANCE EXTENSIONS CHECK=============================
+    //=================================================================================
+    
     // NOTE: if debug, add debug extensions and validation layers. Verify that the debug extensions and validation layers are available by enumerating available extensions and layers and looping through them
+    
     const char *ExtraExtensions[] = 
     {
         VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
@@ -104,7 +133,8 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     
     u32 AvailableExtensionCount = 0;
     vkEnumerateInstanceExtensionProperties(NULL, &AvailableExtensionCount, NULL);
-    VkExtensionProperties *AvailableExtensions = (VkExtensionProperties *)PushArena(&Arena, sizeof(VkExtensionProperties) * AvailableExtensionCount);
+    
+    VkExtensionProperties *AvailableExtensions = PushArray(&Arena, VkExtensionProperties, AvailableExtensionCount);
     vkEnumerateInstanceExtensionProperties(NULL, &AvailableExtensionCount, AvailableExtensions);
     
     b32 ExtraExtensionsAvailable = true;
@@ -128,11 +158,17 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
         }
     }
     
+    
     if(!ExtraExtensionsAvailable)
     {
         SDL_Log("Extra Extensions not available");
         return SDL_APP_FAILURE;
     }
+    
+    
+    //=================================================================================
+    //========================VALIDATION LAYERS CHECK==================================
+    //=================================================================================
     
     const char *ValidationLayers[] = 
     {
@@ -143,7 +179,7 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     vkEnumerateInstanceLayerProperties(&AvailableLayerCount, NULL);
     
     // NOTE: allocate array in transient memory arena
-    VkLayerProperties *AvailableLayers = (VkLayerProperties *)PushArena(&Arena, sizeof(VkLayerProperties) * AvailableLayerCount);
+    VkLayerProperties *AvailableLayers = PushArray(&Arena, VkLayerProperties, AvailableLayerCount);
     
     vkEnumerateInstanceLayerProperties(&AvailableLayerCount, AvailableLayers);
     
@@ -175,7 +211,11 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
         return SDL_APP_FAILURE;
     }
     
-    const char **Extensions = (const char **)PushArena(&Arena, sizeof(const char *) * (ExtensionsCount + ArrayCount(ExtraExtensions)));
+    //=================================================================================
+    //===============COMBINE SDL & DEBUG INSTANCE EXTENSIONS===========================
+    //=================================================================================
+    
+    const char **Extensions = PushArray(&Arena, const char *, ExtensionsCount + ArrayCount(ExtraExtensions));
     
     for(u32 i = 0; i < ExtensionsCount; ++i)
     {
@@ -189,8 +229,17 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     
     ExtensionsCount += ArrayCount(ExtraExtensions);
     
+    //=================================================================================
+    //=========================VALIDATION LAYERS=======================================
+    //=================================================================================
+    
     u32 EnabledLayerCount = ArrayCount(ValidationLayers);
     const char *const *EnabledLayerNames = ValidationLayers;
+    
+    //=================================================================================
+    //======================VALIDATION LAYERS DEBUG==================================== 
+    //==========================CALLBACK SETUP=========================================
+    //=================================================================================
     
     VkDebugUtilsMessengerCreateInfoEXT DebugUtilsMessengerCreateInfo = 
     {
@@ -214,6 +263,10 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     const void *pNext = NULL;
     
 #endif
+    
+    //=================================================================================
+    //==========================VULKAN INSTANCE CREATION===============================
+    //=================================================================================
     
     // NOTE: Using Vulcan 1.0 for now
     VkApplicationInfo AppInfo = 
@@ -250,10 +303,13 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
         }
     }
     
-#if DEBUG
-    // NOTE: so overview, we create a DebugUtilsMessenger object which is a handle that manages our Debug Callback function that logs our validation layers' messages
+    //=================================================================================
+    //=======================VALIDATION LAYER DEBUG CALLBACK=========================== 
+    //===============================SETUP PART 2======================================
+    //=================================================================================
     
-    // NOTE: have to load function first because it's part of an extension
+#if DEBUG
+    
     PFN_vkCreateDebugUtilsMessengerEXT CreateDebugUtilsMessenger = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(VulkanInstance, "vkCreateDebugUtilsMessengerEXT");
     if(!CreateDebugUtilsMessenger)
     {
@@ -272,6 +328,116 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     }
 #endif
     
+    //=================================================================================
+    //=======================PHYSICAL DEVICE ACQUISITION================================
+    //=================================================================================
+    
+    VkPhysicalDevice PhysicalDevice = VK_NULL_HANDLE;
+    queue_family_indices QueueFamilyIndices = {0};
+    
+    u32 AvailableDeviceCount = 0;
+    vkEnumeratePhysicalDevices(VulkanInstance, &AvailableDeviceCount, NULL);
+    if(AvailableDeviceCount == 0)
+    {
+        SDL_Log("Failed to find GPUs with Vulkan support!");
+        return SDL_APP_FAILURE;
+    }
+    
+    VkPhysicalDevice *AvailablePhysicalDevices = PushArray(&Arena, VkPhysicalDevice, AvailableDeviceCount);
+    vkEnumeratePhysicalDevices(VulkanInstance, &AvailableDeviceCount, AvailablePhysicalDevices);
+    
+    for(int i = 0; i < AvailableDeviceCount; ++i)
+    {
+        b32 SuitableDevice = false;
+        VkPhysicalDevice AvailableDevice = AvailablePhysicalDevices[i];
+        
+        VkPhysicalDeviceProperties DeviceProperties;
+        vkGetPhysicalDeviceProperties(AvailableDevice, &DeviceProperties);
+        
+        VkPhysicalDeviceFeatures DeviceFeatures = vkGetPhysicalDeviceFeatures(AvailableDevice, &DeviceFeatures);
+        
+        queue_family_indices Temp_QueueFamilyIndices = {0};
+        u32 QueueFamilyCount = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(AvailableDevice, &QueueFamilyCount, NULL);
+        
+        // NOTE: Our transient arena has 64 MB of space and we won't even come close to reaching that limit by just allocating some arrays during vulkan's setup
+        VkQueueFamilyProperties *AvailableQueueFamilies = PushArray(&Arena, VkQueueFamilyProperties, QueueFamilyCount);
+        
+        vkGetPhysicalDeviceQueueFamilyProperties(AvailableDevice, &QueueFamilyCount, AvailableQueueFamilies);
+        for(int i = 0; i < QueueFamilyCount; ++i)
+        {
+            VkQueueFamilyProperties QueueFamily = &AvailableQueueFamilies[i];
+            if(QueueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+            {
+                Temp_QueueFamilyIndices.GraphicsFamily.HasValue = true;
+                Temp_QueueFamilyIndices.GraphicsFamily.Value = i;
+                SuitableDevice = true;
+                break;
+            }
+        }
+        
+        
+        if(SuitableDevice)
+        {
+            PhysicalDevice = AvailableDevice;
+            QueueFamilyIndices = Temp_QueueFamilyIndices;
+            break;
+        }
+        
+    }
+    
+    
+    
+    if(PhysicalDevice == VK_NULL_HANDLE)
+    {
+        SDL_Log("Failed to find suitable GPU among availble options!");
+        return SDL_APP_FAILURE;
+    }
+    
+    //=================================================================================
+    //======================LOGICAL DEVICE CREATION====================================
+    //=================================================================================
+    
+    VkDevice LogicalDevice;
+    f32 GraphicsQueuePriority = 1.0f;
+    VkDeviceQueueCreateInfo GraphicsQueueCreateInfo = 
+    {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .queueFamilyIndex = QueueFamilyIndices.GraphicsFamily.Value,
+        .queueCount = 1,
+        .pQueuePriorities = &GraphicsQueuePriority,
+    };
+    
+    VkPhysicalDeviceFeatures LogicalDeviceFeatures = {0};
+    
+    VkDeviceCreateInfo LogicalDeviceCreateInfo =
+    {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .queueCreateInfoCount = 1,
+        .pQueueCreateInfos = &GraphicsQueueCreateInfo,
+        .enabledLayerCount = EnabledLayerCount,
+        .ppEnabledLayerNames = EnabledLayerNames,
+        .enabledExtensionCount = 0,
+        .ppEnabledExtensionNames = NULL,
+        .pEnabledFeatures = &LogicalDeviceFeatures,
+        
+    };
+    
+    {
+        VkResult Result = vkCreateDevice(PhysicalDevice, &LogicalDeviceCreateInfo, NULL, &LogicalDevice);
+        if(Result != VK_SUCCESS)
+        {
+            SDL_Log("Logical device creation failed");
+            return SDL_APP_FAILURE;
+        }
+    }
+    
+    VkQueue GraphicsQueue;
+    vkGetDeviceQueue(&LogicalDevice, QueueFamilyIndices.GraphicsFamily.Value, 0, &GraphicsQueue);
     
     
     

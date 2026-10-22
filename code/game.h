@@ -152,6 +152,7 @@ GetController(game_input *Input, i32 ControllerIndex)
 
 typedef struct arena
 {
+    u8 *OriginalAddress;
     u8 *BaseAddress;
     u64 RemainingSpace;
 } arena;
@@ -163,8 +164,11 @@ PushArena(arena *Arena, u64 Size)
     Assert(Arena->RemainingSpace >= Size);
     void *Result = Arena->BaseAddress;
     Arena->BaseAddress += Size;
+    Arena->RemainingSpace -= Size;
     return Result;
 }
+
+#define PushArray(Arena, Type, Count) (Type *)PushArena(Arena, sizeof(Type) * (Count))
 
 
 #define GAME_UPDATE_AND_RENDER(name) void name(game_memory *Memory, game_input *Input)
