@@ -1,5 +1,3 @@
-#include <SDL3/SDL.h>
-
 #include <stdint.h>
 
 #define internal static
@@ -23,8 +21,10 @@ typedef uint64_t u64;
 typedef float    f32;
 typedef double   f64;
 
-#define PI32 SDL_PI_F
-#define PI64 SDL_PI_D
+#define PI32 3.14159265359f
+#define PI64 3.141592653589793238462643383279502884
+
+#include <string.h> // NOTE: for strcmp and memset
 
 // IMPORTANT: This assert is assuming I'm using clang debugging
 #if DEBUG
@@ -101,7 +101,7 @@ Random_f32_InRange(f32 Min, f32 Max, rng *RNG)
     return Min + (Max - Min) * Random_f32(RNG);
 }
 
-typedef struct game_memory
+typedef struct memory
 {
     b32 IsInitialized;
     
@@ -110,7 +110,7 @@ typedef struct game_memory
     
     u64 TransientStorageSize;
     void *TransientStorage;
-} game_memory;
+} memory;
 
 typedef struct game_controller_input
 {
@@ -152,7 +152,6 @@ GetController(game_input *Input, i32 ControllerIndex)
 
 typedef struct arena
 {
-    u8 *OriginalAddress;
     u8 *BaseAddress;
     u64 RemainingSpace;
 } arena;
@@ -168,8 +167,17 @@ PushArena(arena *Arena, u64 Size)
     return Result;
 }
 
-#define PushArray(Arena, Type, Count) (Type *)PushArena(Arena, sizeof(Type) * (Count))
+#define PushArray(ArenaPointer, Type, Count) (Type *)PushArena(ArenaPointer, sizeof(Type) * (Count))
+
+#define ZeroStruct(Struct) memset(&(Struct), 0, sizeof(Struct))
+#define ZeroArray(Array, Count) memset((Array), 0, sizeof(*(Array)) * (Count))
 
 
-#define GAME_UPDATE_AND_RENDER(name) void name(game_memory *Memory, game_input *Input)
+#define GAME_UPDATE_AND_RENDER(name) void name(app_state *AppState)
 typedef GAME_UPDATE_AND_RENDER(game_update_and_render);
+
+
+typedef struct game_state
+{
+    b32 temp;
+};

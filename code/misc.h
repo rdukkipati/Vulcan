@@ -12,45 +12,31 @@ SDL_GetLastWriteTime(const char *Filename)
 }
 
 internal void
-SDL_LoadGameCode(void)
+SDL_LoadGameCode(app_state *AppState)
 {
-    GameDLL = SDL_LoadObject(GameDLLPath);
-    if(GameDLL)
+    char *GameDLLPath = *AppState.GameDLLPath;
+    SDL_SharedObject **GameDLL = &(*AppState.GameDLL);
+    game_update_and_render **GameUpdateAndRender = &(*AppState.GameUpdateAndRender);
+    
+    *GameDLL = SDL_LoadObject(GameDLLPath);
+    if(*GameDLL)
     {
-        GameUpdateAndRender = (game_update_and_render *)SDL_LoadFunction(GameDLL, "GameUpdateAndRender");
+        *GameUpdateAndRender = (game_update_and_render *)SDL_LoadFunction(*GameDLL, "GameUpdateAndRender");
     }
 }
 
 internal void
-SDL_UnloadGameCode(void)
+SDL_UnloadGameCode(app_state *AppState)
 {
-    if(GameDLL)
+    SDL_SharedObject **GameDLL = &(*AppState.GameDLL);
+    game_update_and_render **GameUpdateAndRender = &(*AppState.GameUpdateAndRender);
+    
+    if(*GameDLL)
     {
-        SDL_UnloadObject(GameDLL);
-        GameDLL = NULL;
+        SDL_UnloadObject(*GameDLL);
+        *GameDLL = NULL;
     }
-    GameUpdateAndRender = NULL;
+    *GameUpdateAndRender = NULL;
     
 }
 
-internal void
-InitMemory(void)
-{
-    Memory = (game_memory){0};
-    Memory.PermanentStorageSize = Gigabytes(1);
-    Memory.TransientStorageSize = Megabytes(64);
-    
-#if DEBUG
-    void *BaseAddress = (void *)Terabytes(2);
-    int Flag = MAP_FIXED_NOREPLACE;
-#else
-    void *BaseAddress = (void *)0;
-    int Flag = 0;
-#endif
-    
-    Memory.PermanentStorage = mmap(BaseAddress, Memory.PermanentStorageSize + Memory.TransientStorageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | Flag, -1, 0);
-    
-    
-    
-    Memory.TransientStorage = (u8 *)Memory.PermanentStorage + Memory.PermanentStorageSize;
-}

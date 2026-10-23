@@ -1,40 +1,32 @@
 #include "game.h"
 
-// NOTE: Main SDL header is in game.h because I think I want the game to use some SDL features. SDL_main and SDL_vulkan are required only by the platform layer which is why they are here.
+#include <SDL3/SDL.h>
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_vulkan.h>
 #include <vulkan/vulkan.h>
 
 
-#include <string.h> // NOTE: for strcmp
+typedef struct app_state
+{
+    SDL_Window *Window;
+    i32 WindowWidth;
+    i32 WindowHeight;
+    
+    u64 FrameStartTime;
+    
+    SDL_Time LastDLLWrite;
+    char *GameDLLPath;
+    SDL_SharedObject *GameDLL;
+    
+    memory Memory;
+    game_input Input;
+    
+    game_update_and_render *GameUpdateAndRender;
+    game_state GameState;
+};
 
 
-#define WINDOW_WIDTH 640
-#define WINDOW_HEIGHT 480
-
-
-// TODO: Move these globals into structs later
-global_variable SDL_Window *Window = NULL;
-
-#if 0
-global_variable u64 LastTime = 0;
-global_variable rng RNG;
-#endif
-
-global_variable SDL_Time LastWrite = {0};
-global_variable char *GameDLLPath = NULL;
-
-global_variable SDL_SharedObject *GameDLL = NULL;
-
-
-global_variable game_memory Memory;
-global_variable game_input Input;
-
-game_update_and_render *GameUpdateAndRender;
-
-// NOTE: for mmap on linux. On Windows I would need VirtualAlloc.
-#include <sys/mman.h>
 
 #include "misc.h"
 
@@ -56,25 +48,67 @@ typedef struct optional_u32
     u32 Value;
 } optional_u32;
 
-typedef struct queue_family_indices
+typedef union queue_family_indices
 {
-    optional_u32 GraphicsFamily;
+    struct
+    {
+        optional_u32 GraphicsFamily;
+        optional_u32 PresentFamily;
+    };
+    optional_u32 E[2];
+    
 } queue_family_indices;
 
 
 SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
 {
-    (void)AppState;
     (void)argc;
     (void)argv;
     
-    InitMemory();
+    
+    //=================================================================================
+    //=============================INITIALIZE MEMORY===================================
+    //=================================================================================
+    
+    memory Memory;
+    ZeroStruct(Memory);
+    Memory.PermanentStorageSize = Gigabytes(1);
+    Memory.TransientStorageSize = Megabytes(64);
+    
+#if DEBUG
+    void *BaseAddress = (void *)Terabytes(2);
+    int Flag = MAP_FIXED_NOREPLACE;
+#else
+    void *BaseAddress = (void *)0;
+    int Flag = 0;
+#endif
+    
+#if OS_LINUX
+#include <sys/mman.h>
+    Memory.PermanentStorage = mmap(BaseAddress, Memory.PermanentStorageSize + Memory.TransientStorageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | Flag, -1, 0);
+#elif OS_WINDOWS
+#include <windows.h>
+    Memory.PermanentStorage = VirtualAlloc(BaseAddress, Memory.PermanentStorageSize + Memory.TransientStorageSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+#endif
+    
+    
+    
+    Memory.TransientStorage = (u8 *)Memory.PermanentStorage + Memory.PermanentStorageSize;
+    
     if(Memory.PermanentStorage == MAP_FAILED)
     {
         SDL_Log("Memory allocate failed");
         return SDL_APP_FAILURE;
     }
-    Input = (game_input){0};
+    
+    app_state *State = (app_state *)Memory.PermanentStorage;
+    State->Memory = Memory;
+    
+    *AppState = State;
+    
+    
+    
+    
     
     //=================================================================================
     //=============================INITIALIZE SDL======================================
@@ -88,7 +122,16 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
         return SDL_APP_FAILURE;
     }
     
+#define WINDOW_WIDTH 640
+#define WINDOW_HEIGHT 480
+    
+    SDL_Window *Window = **AppState.Window;
+    **AppState.WindowWidth = WINDOW_WIDTH;
+    **AppState.WindowHeight = WINDOW_HEIGHT;
     Window = SDL_CreateWindow("Vulcan", WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_VULKAN);
+    
+#undef WINDOW_WIDTH
+#undef WINDOW_HEIGHT
     
     if(!Window)
     {
@@ -98,9 +141,8 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     
     arena Arena =
     {
-        .OriginalAddress = Memory.TransientStorage,
-        .BaseAddress = Memory.TransientStorage,
-        .RemainingSpace = Memory.TransientStorageSize,
+        .BaseAddress = **AppState.Memory.TransientStorage,
+        .RemainingSpace = **AppState.Memory.TransientStorageSize,
     };
     
     
@@ -329,11 +371,23 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
 #endif
     
     //=================================================================================
+    //==========================WINDOW SURFACE CREATION================================
+    //=================================================================================
+    
+    VkSurfaceKHR Surface;
+    if(!SDL_Vulkan_CreateSurface(Window, VulkanInstance, NULL, &Surface))
+    {
+        SDL_Log("Failed to create surface: %s", SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
+    
+    
+    //=================================================================================
     //=======================PHYSICAL DEVICE ACQUISITION================================
     //=================================================================================
     
     VkPhysicalDevice PhysicalDevice = VK_NULL_HANDLE;
-    queue_family_indices QueueFamilyIndices = {0};
+    queue_family_indices QueueFamilyIndices = {{0}};
     
     u32 AvailableDeviceCount = 0;
     vkEnumeratePhysicalDevices(VulkanInstance, &AvailableDeviceCount, NULL);
@@ -348,7 +402,7 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     
     for(int i = 0; i < AvailableDeviceCount; ++i)
     {
-        b32 SuitableDevice = false;
+        
         VkPhysicalDevice AvailableDevice = AvailablePhysicalDevices[i];
         
         VkPhysicalDeviceProperties DeviceProperties;
@@ -356,14 +410,16 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
         
         VkPhysicalDeviceFeatures DeviceFeatures = vkGetPhysicalDeviceFeatures(AvailableDevice, &DeviceFeatures);
         
-        queue_family_indices Temp_QueueFamilyIndices = {0};
+        queue_family_indices Temp_QueueFamilyIndices = {{0}};
+        
         u32 QueueFamilyCount = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(AvailableDevice, &QueueFamilyCount, NULL);
         
-        // NOTE: Our transient arena has 64 MB of space and we won't even come close to reaching that limit by just allocating some arrays during vulkan's setup
         VkQueueFamilyProperties *AvailableQueueFamilies = PushArray(&Arena, VkQueueFamilyProperties, QueueFamilyCount);
-        
         vkGetPhysicalDeviceQueueFamilyProperties(AvailableDevice, &QueueFamilyCount, AvailableQueueFamilies);
+        b32 SuitableDevice = false;
+        b32 Graphics = false;
+        b32 Present = false;
         for(int i = 0; i < QueueFamilyCount; ++i)
         {
             VkQueueFamilyProperties QueueFamily = &AvailableQueueFamilies[i];
@@ -371,6 +427,20 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
             {
                 Temp_QueueFamilyIndices.GraphicsFamily.HasValue = true;
                 Temp_QueueFamilyIndices.GraphicsFamily.Value = i;
+                Graphics = true;
+            }
+            
+            VkBool32 PresentSupport = false;
+            vkGetPhysicalDeviceSurfaceSupportKHR(AvailableDevice, i, Surface, &PresentSupport);
+            if(PresentSupport)
+            {
+                Temp_QueueFamilyIndices.PresentFamily.HasValue = true;
+                Temp_QueueFamilyIndices.PresentFamily.Value = i;
+                Present = true;
+            }
+            
+            if(Graphics && Present)
+            {
                 SuitableDevice = true;
                 break;
             }
@@ -395,30 +465,85 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     }
     
     //=================================================================================
+    //=====================COUNTING UNIQUE QUEUE FAMILIES==============================
+    //=================================================================================
+    
+    
+    u32 UniqueQueueFamilyIndicesCount = 0;
+    u32 MaximumQueueFamilyIndicesCount = ArrayCount(QueueFamilyIndices.E);
+    optional_u32 UniqueQueueFamilyIndices[MaximumQueueFamilyIndicesCount];
+    ZeroArray(UniqueQueueFamilyIndices, MaximumQueueFamilyIndicesCount);
+    
+    // NOTE: Create array of unique queue family indices. Loop through our struct's indices for each family and add them to array if they don't exist in the array. O(n^2) style. We end up with a count of how many unique indices there are and an array of those unique indices.
+    for(int i = 0; i < MaximumQueueFamilyIndicesCount; ++i)
+    {
+        optional_u32 Family = QueueFamilyIndices.E[i];
+        for(int j = 0; j < MaximumQueueFamilyIndicesCount; ++j)
+        {
+            optional_u32 *Unique = &UniqueQueueFamilyIndices[j];
+            if(!Unique->HasValue)
+            {
+                ++Count;
+                Unique->HasValue = true;
+                Unique->Value = Family.Value;
+                break;
+            }
+            else
+            {
+                if(Unique->Value == Family.Value)
+                {
+                    break;
+                }
+                else
+                {
+                    continue;
+                }
+                
+            }
+        }
+    }
+    
+    Assert(UniqueQueueFamilyIndicesCount <= MaximumQueueFamilyIndicesCount);
+    
+    //=================================================================================
+    //======================UNIQUE QUEUE CREATE INFOS==================================
+    //=================================================================================
+    
+    VkDeviceQueueCreateInfo *QueueCreateInfos = PushArray(&Arena, VkDeviceQueueCreateInfo, UniqueQueueFamilyIndicesCount);
+    
+    VkDevice LogicalDevice;
+    
+    f32 QueuePriority = 1.0f;
+    for(int i = 0; i < UniqueQueueFamilyIndicesCount; ++i)
+    {
+        u32 QueueFamilyIndex = UniqueQueueFamilyIndices[i].Value;
+        VkDeviceQueueCreateInfo QueueCreateInfo = 
+        {
+            .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+            .pNext = NULL,
+            .flags = 0,
+            .queueFamilyIndex = UniqueQueueFamilyIndices[i].Value,
+            .queueCount = 1,
+            .pQueuePriorities = &QueuePriority,
+        };
+        QueueCreateInfos[i] = QueueCreateInfo;
+    }
+    
+    //=================================================================================
     //======================LOGICAL DEVICE CREATION====================================
     //=================================================================================
     
-    VkDevice LogicalDevice;
-    f32 GraphicsQueuePriority = 1.0f;
-    VkDeviceQueueCreateInfo GraphicsQueueCreateInfo = 
-    {
-        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-        .pNext = NULL,
-        .flags = 0,
-        .queueFamilyIndex = QueueFamilyIndices.GraphicsFamily.Value,
-        .queueCount = 1,
-        .pQueuePriorities = &GraphicsQueuePriority,
-    };
     
-    VkPhysicalDeviceFeatures LogicalDeviceFeatures = {0};
+    VkPhysicalDeviceFeatures LogicalDeviceFeatures;
+    ZeroStruct(LogicalDeviceFeatures);
     
     VkDeviceCreateInfo LogicalDeviceCreateInfo =
     {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pNext = NULL,
         .flags = 0,
-        .queueCreateInfoCount = 1,
-        .pQueueCreateInfos = &GraphicsQueueCreateInfo,
+        .queueCreateInfoCount = UniqueQueueFamilyIndicesCount,
+        .pQueueCreateInfos = QueueCreateInfos,
         .enabledLayerCount = EnabledLayerCount,
         .ppEnabledLayerNames = EnabledLayerNames,
         .enabledExtensionCount = 0,
@@ -439,12 +564,17 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     VkQueue GraphicsQueue;
     vkGetDeviceQueue(&LogicalDevice, QueueFamilyIndices.GraphicsFamily.Value, 0, &GraphicsQueue);
     
+    VkQueue PresentQueue;
+    vkGetDeviceQueue(&LogicalDevice, QueueFamilyIndices.PresentFamily.Value, 0, &PresentQueue);
     
     
-    // NOTE: asprintf here appends the name of the game dll to the location of the executable
+    
+    char *GameDLLPath = **AppState.GameDLLPath;
+    SDL_Time *LastDLLWrite = &(**AppState.LastDLLWrite);
+    
     SDL_asprintf(&GameDLLPath, "%sgame.so", SDL_GetBasePath());
-    SDL_LoadGameCode();
-    LastWrite = SDL_GetLastWriteTime(GameDLLPath);
+    SDL_LoadGameCode(*AppState);
+    *LastDLLWrite = SDL_GetLastWriteTime(GameDLLPath);
     
     return SDL_APP_CONTINUE;
     
@@ -464,21 +594,24 @@ SDL_AppResult SDL_AppEvent(void *AppState, SDL_Event *Event)
 
 SDL_AppResult SDL_AppIterate(void *AppState)
 {
-    (void)AppState;
+    char *GameDLLPath = *AppState.GameDLLPath;
+    SDL_Time LastDLLWrite = *AppState.LastDLLWrite;
+    game_update_and_render *GameUpdateAndRender = *AppState.GameUpdateAndRender;
     
-    SDL_Time NewWrite = SDL_GetLastWriteTime(GameDLLPath);
-    if(NewWrite != LastWrite)
+    
+    SDL_Time NewDLLWrite = SDL_GetLastWriteTime(GameDLLPath);
+    if(NewDLLWrite != LastDLLWrite)
     {
-        LastWrite = NewWrite;
-        SDL_UnloadGameCode();
-        SDL_LoadGameCode();
+        LastDLLWrite = NewDLLWrite;
+        SDL_UnloadGameCode(AppState);
+        SDL_LoadGameCode(AppState);
     }
     
     
     
     if(GameUpdateAndRender)
     {
-        GameUpdateAndRender(&Memory, &Input);
+        GameUpdateAndRender(AppState);
     }
     
     
