@@ -1,3 +1,5 @@
+
+
 #include <stdint.h>
 
 #define internal static
@@ -167,17 +169,19 @@ PushArena(arena *Arena, u64 Size)
     return Result;
 }
 
+#define PushStruct(ArenaPointer, Type) (Type *)PushArena(ArenaPointer, sizeof(Type))
 #define PushArray(ArenaPointer, Type, Count) (Type *)PushArena(ArenaPointer, sizeof(Type) * (Count))
 
 #define ZeroStruct(Struct) memset(&(Struct), 0, sizeof(Struct))
 #define ZeroArray(Array, Count) memset((Array), 0, sizeof(*(Array)) * (Count))
 
-
-#define GAME_UPDATE_AND_RENDER(name) void name(app_state *AppState)
-typedef GAME_UPDATE_AND_RENDER(game_update_and_render);
-
-
 typedef struct game_state
 {
     b32 temp;
-};
+} game_state;
+
+
+
+
+#define GAME_UPDATE_AND_RENDER(name) void name(memory *Memory, game_input *Input)
+typedef GAME_UPDATE_AND_RENDER(game_update_and_render);

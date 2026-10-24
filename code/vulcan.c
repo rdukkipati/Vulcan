@@ -1,64 +1,11 @@
-#include "game.h"
-
 #include <SDL3/SDL.h>
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_vulkan.h>
 #include <vulkan/vulkan.h>
 
-
-typedef struct app_state
-{
-    SDL_Window *Window;
-    i32 WindowWidth;
-    i32 WindowHeight;
-    
-    u64 FrameStartTime;
-    
-    SDL_Time LastDLLWrite;
-    char *GameDLLPath;
-    SDL_SharedObject *GameDLL;
-    
-    memory Memory;
-    game_input Input;
-    
-    game_update_and_render *GameUpdateAndRender;
-    game_state GameState;
-};
-
-
-
-#include "misc.h"
-
-internal VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT MessageSeverity, VkDebugUtilsMessageTypeFlagsEXT MessageType, const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData)
-{
-    (void)MessageSeverity;
-    (void)MessageType;
-    (void)pUserData;
-    
-    SDL_Log("Validation Layer: %s", pCallbackData->pMessage);
-    
-    return VK_FALSE;
-}
-
-
-typedef struct optional_u32
-{
-    b32 HasValue;
-    u32 Value;
-} optional_u32;
-
-typedef union queue_family_indices
-{
-    struct
-    {
-        optional_u32 GraphicsFamily;
-        optional_u32 PresentFamily;
-    };
-    optional_u32 E[2];
-    
-} queue_family_indices;
-
+#include "game.h"
+#include "vulcan.h"
 
 SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
 {
@@ -70,10 +17,12 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     //=============================INITIALIZE MEMORY===================================
     //=================================================================================
     
-    memory Memory;
-    ZeroStruct(Memory);
-    Memory.PermanentStorageSize = Gigabytes(1);
-    Memory.TransientStorageSize = Megabytes(64);
+    memory *Memory = &State.Memory;
+    Memory->PermanentStorageSize = Gigabytes(1);
+    Memory->TransientStorageSize = Megabytes(64);
+    
+#if OS_LINUX
+#include <sys/mman.h>
     
 #if DEBUG
     void *BaseAddress = (void *)Terabytes(2);
@@ -83,31 +32,27 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     int Flag = 0;
 #endif
     
-#if OS_LINUX
-#include <sys/mman.h>
-    Memory.PermanentStorage = mmap(BaseAddress, Memory.PermanentStorageSize + Memory.TransientStorageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | Flag, -1, 0);
+    Memory->PermanentStorage = mmap(BaseAddress, Memory->PermanentStorageSize + Memory->TransientStorageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | Flag, -1, 0);
+    
 #elif OS_WINDOWS
+    
 #include <windows.h>
-    Memory.PermanentStorage = VirtualAlloc(BaseAddress, Memory.PermanentStorageSize + Memory.TransientStorageSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+#if DEBUG
+    void *BaseAddress = (void *)Terabytes(2);
+#else
+    void *BaseAddress = (void *)0;
+#endif
+    Memory->PermanentStorage = VirtualAlloc(BaseAddress, Memory->PermanentStorageSize + Memory->TransientStorageSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    
 #endif
     
+    Memory->TransientStorage = (u8 *)Memory->PermanentStorage + Memory->PermanentStorageSize;
     
-    
-    Memory.TransientStorage = (u8 *)Memory.PermanentStorage + Memory.PermanentStorageSize;
-    
-    if(Memory.PermanentStorage == MAP_FAILED)
+    if(Memory->PermanentStorage == MAP_FAILED)
     {
         SDL_Log("Memory allocate failed");
         return SDL_APP_FAILURE;
     }
-    
-    app_state *State = (app_state *)Memory.PermanentStorage;
-    State->Memory = Memory;
-    
-    *AppState = State;
-    
-    
-    
     
     
     //=================================================================================
@@ -125,9 +70,9 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
 #define WINDOW_WIDTH 640
 #define WINDOW_HEIGHT 480
     
-    SDL_Window *Window = **AppState.Window;
-    **AppState.WindowWidth = WINDOW_WIDTH;
-    **AppState.WindowHeight = WINDOW_HEIGHT;
+    SDL_Window *Window = State.Window;
+    State.WindowWidth = WINDOW_WIDTH;
+    State.WindowHeight = WINDOW_HEIGHT;
     Window = SDL_CreateWindow("Vulcan", WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_VULKAN);
     
 #undef WINDOW_WIDTH
@@ -141,8 +86,8 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     
     arena Arena =
     {
-        .BaseAddress = **AppState.Memory.TransientStorage,
-        .RemainingSpace = **AppState.Memory.TransientStorageSize,
+        .BaseAddress = State.Memory.TransientStorage,
+        .RemainingSpace = State.Memory.TransientStorageSize,
     };
     
     
@@ -165,8 +110,6 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     //=====================DEBUG INSTANCE EXTENSIONS CHECK=============================
     //=================================================================================
     
-    // NOTE: if debug, add debug extensions and validation layers. Verify that the debug extensions and validation layers are available by enumerating available extensions and layers and looping through them
-    
     const char *ExtraExtensions[] = 
     {
         VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
@@ -176,8 +119,8 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     u32 AvailableExtensionCount = 0;
     vkEnumerateInstanceExtensionProperties(NULL, &AvailableExtensionCount, NULL);
     
-    VkExtensionProperties *AvailableExtensions = PushArray(&Arena, VkExtensionProperties, AvailableExtensionCount);
-    vkEnumerateInstanceExtensionProperties(NULL, &AvailableExtensionCount, AvailableExtensions);
+    VkExtensionProperties *AvailableInstanceExtensions = PushArray(&Arena, VkExtensionProperties, AvailableExtensionCount);
+    vkEnumerateInstanceExtensionProperties(NULL, &AvailableExtensionCount, AvailableInstanceExtensions);
     
     b32 ExtraExtensionsAvailable = true;
     for(int i = 0; i < ArrayCount(ExtraExtensions); ++i)
@@ -186,7 +129,7 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
         const char *ExtraExtension = ExtraExtensions[i];
         for(u32 j = 0; j < AvailableExtensionCount; ++j)
         {
-            VkExtensionProperties *AvailableExtension = &AvailableExtensions[j];
+            VkExtensionProperties *AvailableExtension = &AvailableInstanceExtensions[j];
             if(strcmp(ExtraExtension, AvailableExtension->extensionName) == 0)
             {
                 ExtensionFound = true;
@@ -386,8 +329,14 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     //=======================PHYSICAL DEVICE ACQUISITION================================
     //=================================================================================
     
+    const char *RequiredDeviceExtensions[] = 
+    {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+    };
+    
     VkPhysicalDevice PhysicalDevice = VK_NULL_HANDLE;
-    queue_family_indices QueueFamilyIndices = {{0}};
+    queue_family_indices QueueFamilyIndices;
+    ZeroStruct(QueueFamilyIndices);
     
     u32 AvailableDeviceCount = 0;
     vkEnumeratePhysicalDevices(VulkanInstance, &AvailableDeviceCount, NULL);
@@ -400,54 +349,140 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     VkPhysicalDevice *AvailablePhysicalDevices = PushArray(&Arena, VkPhysicalDevice, AvailableDeviceCount);
     vkEnumeratePhysicalDevices(VulkanInstance, &AvailableDeviceCount, AvailablePhysicalDevices);
     
-    for(int i = 0; i < AvailableDeviceCount; ++i)
+    for(u32 i = 0; i < AvailableDeviceCount; ++i)
     {
         
         VkPhysicalDevice AvailableDevice = AvailablePhysicalDevices[i];
         
+        
+        u32 AvailableDeviceExtensionsCount;
+        vkEnumerateDeviceExtensionProperties(AvailableDevice, NULL, &AvailableDeviceExtensionsCount, NULL);
+        VkExtensionProperties *AvailableDeviceExtensions = PushArray(&Arena, VkExtensionProperties, AvailableDeviceExtensionsCount);
+        vkEnumerateDeviceExtensionProperties(AvailableDevice, NULL, &AvailableDeviceExtensionsCount, AvailableDeviceExtensions);
+        
+        b32 RequiredDeviceExtensionsSupported = true;
+        for(u32 j = 0; j < (u32)ArrayCount(RequiredDeviceExtensions); ++j)
+        {
+            const char *RequiredExtension = RequiredDeviceExtensions[j];
+            b32 Exists = false;
+            for(u32 k = 0; k < AvailableDeviceExtensionsCount; ++k)
+            {
+                const char *AvailableExtension = AvailableDeviceExtensions[k].extensionName;
+                if(strcmp(RequiredExtension, AvailableExtension) == 0)
+                {
+                    Exists = true;
+                    break;
+                }
+                
+            }
+            if(!Exists)
+            {
+                RequiredDeviceExtensionsSupported = false;
+                break;
+            }
+            
+        }
+        
+        if(!RequiredDeviceExtensionsSupported)
+        {
+            continue;
+        }
+        
+        
+        typedef struct swapchain_support_details
+        {
+            VkSurfaceCapabilitiesKHR Capabilities;
+            VkSurfaceFormatKHR *Formats;
+            VkPresentModeKHR *PresentModes;
+        } swapchain_support_details;
+        
+        
+        swapchain_support_details SwapchainDetails;
+        ZeroStruct(SwapchainDetails);
+        
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(AvailableDevice, Surface, &SwapchainDetails.Capabilities);
+        u32 FormatCount;
+        vkGetPhysicalDeviceSurfaceFormatsKHR(AvailableDevice, Surface, &FormatCount, NULL);
+        if(FormatCount)
+        {
+            SwapchainDetails.Formats = PushArray(&Arena, VkSurfaceFormatKHR, FormatCount);
+            vkGetPhysicalDeviceSurfaceFormatsKHR(AvailableDevice, Surface, &FormatCount, SwapchainDetails.Formats);
+        }
+        
+        u32 PresentModeCount;
+        vkGetPhysicalDeviceSurfaceFormatsKHR(AvailableDevice, Surface, &PresentModeCount, NULL);
+        if(PresentModeCount)
+        {
+            SwapchainDetails.PresentModes = PushArray(&Arena, VkPresentModeKHR, PresentModeCount);
+            vkGetPhysicalDeviceSurfacePresentModesKHR(AvailableDevice, Surface, &PresentModeCount, SwapchainDetails.PresentModes);
+        }
+        
+        if(SwapchainDetails.Formats == NULL || SwapchainDetails.PresentModes == NULL)
+        {
+            continue;
+        }
+        
+        VkSurfaceFormatKHR ChosenFormat;
+        b32 DesiredFormatFound = false;
+        for(u32 j = 0; j < FormatCount; ++j)
+        {
+            if(SwapchainDetails.Formats[j].format == VK_FORMAT_B8G8R8A8_SRGB && SwapchainDetails.Formats[j].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+            {
+                ChosenFormat = SwapchainDetails.Formats[j];
+                DesiredFormatFound = true;
+            }
+        }
+        if(!DesiredFormatFound)
+        {
+            ChosenFormat = SwapchainDetails.Formats[0];
+        }
+        
+        VkPresentModeKHR ChosenPresentMode = VK_PRESENT_MODE_FIFO_KHR;
+        
         VkPhysicalDeviceProperties DeviceProperties;
         vkGetPhysicalDeviceProperties(AvailableDevice, &DeviceProperties);
         
-        VkPhysicalDeviceFeatures DeviceFeatures = vkGetPhysicalDeviceFeatures(AvailableDevice, &DeviceFeatures);
+        VkPhysicalDeviceFeatures DeviceFeatures; vkGetPhysicalDeviceFeatures(AvailableDevice, &DeviceFeatures);
         
-        queue_family_indices Temp_QueueFamilyIndices = {{0}};
+        queue_family_indices Temp_QueueFamilyIndices;
+        ZeroStruct(Temp_QueueFamilyIndices);
         
         u32 QueueFamilyCount = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(AvailableDevice, &QueueFamilyCount, NULL);
         
         VkQueueFamilyProperties *AvailableQueueFamilies = PushArray(&Arena, VkQueueFamilyProperties, QueueFamilyCount);
         vkGetPhysicalDeviceQueueFamilyProperties(AvailableDevice, &QueueFamilyCount, AvailableQueueFamilies);
-        b32 SuitableDevice = false;
+        b32 QueueFamiliesSupported = false;
         b32 Graphics = false;
         b32 Present = false;
-        for(int i = 0; i < QueueFamilyCount; ++i)
+        for(u32 j = 0; j < QueueFamilyCount; ++j)
         {
-            VkQueueFamilyProperties QueueFamily = &AvailableQueueFamilies[i];
-            if(QueueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+            VkQueueFamilyProperties *QueueFamily = &AvailableQueueFamilies[j];
+            if(QueueFamily->queueFlags & VK_QUEUE_GRAPHICS_BIT)
             {
                 Temp_QueueFamilyIndices.GraphicsFamily.HasValue = true;
-                Temp_QueueFamilyIndices.GraphicsFamily.Value = i;
+                Temp_QueueFamilyIndices.GraphicsFamily.Value = j;
                 Graphics = true;
             }
             
             VkBool32 PresentSupport = false;
-            vkGetPhysicalDeviceSurfaceSupportKHR(AvailableDevice, i, Surface, &PresentSupport);
+            vkGetPhysicalDeviceSurfaceSupportKHR(AvailableDevice, j, Surface, &PresentSupport);
             if(PresentSupport)
             {
                 Temp_QueueFamilyIndices.PresentFamily.HasValue = true;
-                Temp_QueueFamilyIndices.PresentFamily.Value = i;
+                Temp_QueueFamilyIndices.PresentFamily.Value = j;
                 Present = true;
             }
             
             if(Graphics && Present)
             {
-                SuitableDevice = true;
+                QueueFamiliesSupported = true;
                 break;
             }
         }
         
         
-        if(SuitableDevice)
+        if(QueueFamiliesSupported)
         {
             PhysicalDevice = AvailableDevice;
             QueueFamilyIndices = Temp_QueueFamilyIndices;
@@ -475,15 +510,15 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     ZeroArray(UniqueQueueFamilyIndices, MaximumQueueFamilyIndicesCount);
     
     // NOTE: Create array of unique queue family indices. Loop through our struct's indices for each family and add them to array if they don't exist in the array. O(n^2) style. We end up with a count of how many unique indices there are and an array of those unique indices.
-    for(int i = 0; i < MaximumQueueFamilyIndicesCount; ++i)
+    for(u32 i = 0; i < MaximumQueueFamilyIndicesCount; ++i)
     {
         optional_u32 Family = QueueFamilyIndices.E[i];
-        for(int j = 0; j < MaximumQueueFamilyIndicesCount; ++j)
+        for(u32 j = 0; j < MaximumQueueFamilyIndicesCount; ++j)
         {
             optional_u32 *Unique = &UniqueQueueFamilyIndices[j];
-            if(!Unique->HasValue)
+            if(!(Unique->HasValue))
             {
-                ++Count;
+                ++UniqueQueueFamilyIndicesCount;
                 Unique->HasValue = true;
                 Unique->Value = Family.Value;
                 break;
@@ -514,7 +549,7 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     VkDevice LogicalDevice;
     
     f32 QueuePriority = 1.0f;
-    for(int i = 0; i < UniqueQueueFamilyIndicesCount; ++i)
+    for(u32 i = 0; i < UniqueQueueFamilyIndicesCount; ++i)
     {
         u32 QueueFamilyIndex = UniqueQueueFamilyIndices[i].Value;
         VkDeviceQueueCreateInfo QueueCreateInfo = 
@@ -546,8 +581,8 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
         .pQueueCreateInfos = QueueCreateInfos,
         .enabledLayerCount = EnabledLayerCount,
         .ppEnabledLayerNames = EnabledLayerNames,
-        .enabledExtensionCount = 0,
-        .ppEnabledExtensionNames = NULL,
+        .enabledExtensionCount = ArrayCount(RequiredDeviceExtensions),
+        .ppEnabledExtensionNames = RequiredDeviceExtensions,
         .pEnabledFeatures = &LogicalDeviceFeatures,
         
     };
@@ -562,18 +597,19 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     }
     
     VkQueue GraphicsQueue;
-    vkGetDeviceQueue(&LogicalDevice, QueueFamilyIndices.GraphicsFamily.Value, 0, &GraphicsQueue);
+    vkGetDeviceQueue(LogicalDevice, QueueFamilyIndices.GraphicsFamily.Value, 0, &GraphicsQueue);
     
     VkQueue PresentQueue;
-    vkGetDeviceQueue(&LogicalDevice, QueueFamilyIndices.PresentFamily.Value, 0, &PresentQueue);
+    vkGetDeviceQueue(LogicalDevice, QueueFamilyIndices.PresentFamily.Value, 0, &PresentQueue);
     
     
     
-    char *GameDLLPath = **AppState.GameDLLPath;
-    SDL_Time *LastDLLWrite = &(**AppState.LastDLLWrite);
+    
+    char *GameDLLPath = State.GameDLLPath;
+    SDL_Time *LastDLLWrite = &(State.LastDLLWrite);
     
     SDL_asprintf(&GameDLLPath, "%sgame.so", SDL_GetBasePath());
-    SDL_LoadGameCode(*AppState);
+    SDL_LoadGameCode();
     *LastDLLWrite = SDL_GetLastWriteTime(GameDLLPath);
     
     return SDL_APP_CONTINUE;
@@ -594,24 +630,27 @@ SDL_AppResult SDL_AppEvent(void *AppState, SDL_Event *Event)
 
 SDL_AppResult SDL_AppIterate(void *AppState)
 {
-    char *GameDLLPath = *AppState.GameDLLPath;
-    SDL_Time LastDLLWrite = *AppState.LastDLLWrite;
-    game_update_and_render *GameUpdateAndRender = *AppState.GameUpdateAndRender;
+    
+    (void)AppState;
+    
+    char *GameDLLPath = State.GameDLLPath;
+    SDL_Time LastDLLWrite = State.LastDLLWrite;
+    game_update_and_render *GameUpdateAndRender = State.GameUpdateAndRender;
     
     
     SDL_Time NewDLLWrite = SDL_GetLastWriteTime(GameDLLPath);
     if(NewDLLWrite != LastDLLWrite)
     {
         LastDLLWrite = NewDLLWrite;
-        SDL_UnloadGameCode(AppState);
-        SDL_LoadGameCode(AppState);
+        SDL_UnloadGameCode();
+        SDL_LoadGameCode();
     }
     
     
     
     if(GameUpdateAndRender)
     {
-        GameUpdateAndRender(AppState);
+        GameUpdateAndRender(&State.Memory, &State.Input);
     }
     
     

@@ -2,5 +2,6 @@
 
 extern GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
-    (void)AppState;
+    (void)Memory;
+    (void)Input;
 }
