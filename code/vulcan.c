@@ -4,6 +4,13 @@
 #include <SDL3/SDL_vulkan.h>
 #include <vulkan/vulkan.h>
 
+#include <sys/mman.h> // mmap
+#include <fcntl.h> // open() and O_RDONLY
+#include <sys/stat.h> // struct stat and fstat()
+#include <unistd.h> // read() close()
+#include <stddef.h> // size_t
+#include <sys/types.h> // ssize_t
+
 #include "game.h"
 #include "vulcan.h"
 
@@ -21,8 +28,6 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     Memory->PermanentStorageSize = Gigabytes(1);
     Memory->TransientStorageSize = Megabytes(64);
     
-#if OS_LINUX
-#include <sys/mman.h>
     
 #if DEBUG
     void *BaseAddress = (void *)Terabytes(2);
@@ -34,17 +39,7 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     
     Memory->PermanentStorage = mmap(BaseAddress, Memory->PermanentStorageSize + Memory->TransientStorageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | Flag, -1, 0);
     
-#elif OS_WINDOWS
     
-#include <windows.h>
-#if DEBUG
-    void *BaseAddress = (void *)Terabytes(2);
-#else
-    void *BaseAddress = (void *)0;
-#endif
-    Memory->PermanentStorage = VirtualAlloc(BaseAddress, Memory->PermanentStorageSize + Memory->TransientStorageSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-    
-#endif
     
     Memory->TransientStorage = (u8 *)Memory->PermanentStorage + Memory->PermanentStorageSize;
     
@@ -349,6 +344,12 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     VkPhysicalDevice *AvailablePhysicalDevices = PushArray(&Arena, VkPhysicalDevice, AvailableDeviceCount);
     vkEnumeratePhysicalDevices(VulkanInstance, &AvailableDeviceCount, AvailablePhysicalDevices);
     
+    
+    
+    swapchain_support_details SwapchainDetails;
+    u32 FormatCount;
+    u32 PresentModeCount;
+    
     for(u32 i = 0; i < AvailableDeviceCount; ++i)
     {
         
@@ -389,19 +390,10 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
         }
         
         
-        typedef struct swapchain_support_details
-        {
-            VkSurfaceCapabilitiesKHR Capabilities;
-            VkSurfaceFormatKHR *Formats;
-            VkPresentModeKHR *PresentModes;
-        } swapchain_support_details;
         
-        
-        swapchain_support_details SwapchainDetails;
         ZeroStruct(SwapchainDetails);
-        
         vkGetPhysicalDeviceSurfaceCapabilitiesKHR(AvailableDevice, Surface, &SwapchainDetails.Capabilities);
-        u32 FormatCount;
+        FormatCount = 0;
         vkGetPhysicalDeviceSurfaceFormatsKHR(AvailableDevice, Surface, &FormatCount, NULL);
         if(FormatCount)
         {
@@ -409,7 +401,7 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
             vkGetPhysicalDeviceSurfaceFormatsKHR(AvailableDevice, Surface, &FormatCount, SwapchainDetails.Formats);
         }
         
-        u32 PresentModeCount;
+        PresentModeCount = 0;
         vkGetPhysicalDeviceSurfaceFormatsKHR(AvailableDevice, Surface, &PresentModeCount, NULL);
         if(PresentModeCount)
         {
@@ -421,23 +413,6 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
         {
             continue;
         }
-        
-        VkSurfaceFormatKHR ChosenFormat;
-        b32 DesiredFormatFound = false;
-        for(u32 j = 0; j < FormatCount; ++j)
-        {
-            if(SwapchainDetails.Formats[j].format == VK_FORMAT_B8G8R8A8_SRGB && SwapchainDetails.Formats[j].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
-            {
-                ChosenFormat = SwapchainDetails.Formats[j];
-                DesiredFormatFound = true;
-            }
-        }
-        if(!DesiredFormatFound)
-        {
-            ChosenFormat = SwapchainDetails.Formats[0];
-        }
-        
-        VkPresentModeKHR ChosenPresentMode = VK_PRESENT_MODE_FIFO_KHR;
         
         VkPhysicalDeviceProperties DeviceProperties;
         vkGetPhysicalDeviceProperties(AvailableDevice, &DeviceProperties);
@@ -486,6 +461,7 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
         {
             PhysicalDevice = AvailableDevice;
             QueueFamilyIndices = Temp_QueueFamilyIndices;
+            
             break;
         }
         
@@ -498,6 +474,107 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
         SDL_Log("Failed to find suitable GPU among availble options!");
         return SDL_APP_FAILURE;
     }
+    
+    VkExtent2D SwapchainExtent;
+    VkSurfaceFormatKHR ChosenSurfaceFormat;
+    VkPresentModeKHR ChosenPresentMode;
+    
+    
+    b32 DesiredFormatFound = false;
+    for(u32 j = 0; j < FormatCount; ++j)
+    {
+        if(SwapchainDetails.Formats[j].format == VK_FORMAT_B8G8R8A8_SRGB && SwapchainDetails.Formats[j].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+        {
+            ChosenSurfaceFormat = SwapchainDetails.Formats[j];
+            DesiredFormatFound = true;
+        }
+    }
+    if(!DesiredFormatFound)
+    {
+        ChosenSurfaceFormat = SwapchainDetails.Formats[0];
+    }
+    
+    ChosenPresentMode = VK_PRESENT_MODE_FIFO_KHR;
+    
+    
+    if(SwapchainDetails.Capabilities.currentExtent.width != UINT32_MAX)
+    {
+        SwapchainExtent = SwapchainDetails.Capabilities.currentExtent;
+    }
+    else
+    {
+        int width, height;
+        if(!SDL_GetWindowSizeInPixels(Window, &width, &height))
+        {
+            SDL_Log("Failed to get window size in pixels: %s", SDL_GetError());
+            return SDL_APP_FAILURE;
+        }
+        VkExtent2D Extent = 
+        {
+            .width = (u32)width,
+            .height = (u32)height,
+        };
+        
+        Extent.width = Clamp(Extent.width, SwapchainDetails.Capabilities.minImageExtent.width, SwapchainDetails.Capabilities.maxImageExtent.width);
+        Extent.height = Clamp(Extent.height, SwapchainDetails.Capabilities.minImageExtent.height, SwapchainDetails.Capabilities.maxImageExtent.height);
+        
+        SwapchainExtent = Extent;
+    }
+    
+    u32 SwapchainImageCount = SwapchainDetails.Capabilities.minImageCount;
+    if(SwapchainImageCount <= 2)
+    {
+        SwapchainImageCount = 2;
+    }
+    if(SwapchainDetails.Capabilities.maxImageCount > 0 && SwapchainImageCount > SwapchainDetails.Capabilities.maxImageCount)
+    {
+        SwapchainImageCount = SwapchainDetails.Capabilities.maxImageCount;
+    }
+    
+    Assert(SwapchainImageCount == 2);
+    
+    VkSharingMode ImageSharingMode;
+    u32 QueueFamilyIndexCount;
+    const u32 *pQueueFamilyIndices;
+    u32 QueueFamilyIndexValues[] = {QueueFamilyIndices.GraphicsFamily.Value, QueueFamilyIndices.PresentFamily.Value};
+    if(QueueFamilyIndices.GraphicsFamily.Value != QueueFamilyIndices.PresentFamily.Value)
+    {
+        ImageSharingMode = VK_SHARING_MODE_CONCURRENT;
+        QueueFamilyIndexCount = 2;
+        pQueueFamilyIndices = QueueFamilyIndexValues;
+    }
+    else
+    {
+        ImageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        QueueFamilyIndexCount = 0;
+        pQueueFamilyIndices = NULL;
+    }
+    
+    VkSwapchainCreateInfoKHR SwapchainCreateInfo = 
+    {
+        .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR ,
+        .pNext = NULL,
+        .flags = 0,
+        .surface = Surface,
+        .minImageCount = SwapchainImageCount,
+        .imageFormat = ChosenSurfaceFormat.format,
+        .imageColorSpace = ChosenSurfaceFormat.colorSpace,
+        .imageExtent = SwapchainExtent,
+        .imageArrayLayers = 1,
+        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .imageSharingMode = ImageSharingMode,
+        .queueFamilyIndexCount = QueueFamilyIndexCount,
+        .pQueueFamilyIndices = pQueueFamilyIndices,
+        .preTransform = SwapchainDetails.Capabilities.currentTransform,
+        .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+        .presentMode = ChosenPresentMode,
+        .clipped = VK_TRUE,
+        .oldSwapchain = VK_NULL_HANDLE,
+        
+    };
+    
+    
+    
     
     //=================================================================================
     //=====================COUNTING UNIQUE QUEUE FAMILIES==============================
@@ -595,6 +672,204 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
             return SDL_APP_FAILURE;
         }
     }
+    
+    VkSwapchainKHR Swapchain;
+    
+    {
+        VkResult Result = vkCreateSwapchainKHR(LogicalDevice, &SwapchainCreateInfo, NULL, &Swapchain);
+        if(Result != VK_SUCCESS)
+        {
+            SDL_Log("Swapchain creation failed: %d", Result);
+            return SDL_APP_FAILURE;
+        }
+    }
+    
+    SwapchainImageCount = 0;
+    vkGetSwapchainImagesKHR(LogicalDevice, Swapchain, &SwapchainImageCount, NULL);
+    VkImage *SwapchainImages = PushArray(&Eternal, VkImage, SwapchainImageCount);
+    vkGetSwapchainImagesKHR(LogicalDevice, Swapchain, &SwapchainImageCount, SwapchainImages);
+    
+    VkImageView *SwapchainImageViews = PushArray(&Eternal, VkImageView, SwapchainImageCount);
+    
+    VkComponentMapping Components =
+    {
+        .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+        .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+        .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+        .a = VK_COMPONENT_SWIZZLE_IDENTITY,
+    };
+    
+    VkImageSubresourceRange SubresourceRange = 
+    {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1,
+    };
+    
+    for(int i = 0; i < SwapchainImageCount; ++i)
+    {
+        VkImageViewCreateInfo ImageViewCreateInfo = 
+        {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .pNext = NULL,
+            .flags = 0,
+            .image = SwapchainImages[i],
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = ChosenSurfaceFormat,
+            .components = Components,
+            .subresourceRange = SubresourceRange,
+        };
+        VkResult Result = vkCreateImageView(LogicalDevice, &ImageViewCreateInfo, NULL, SwapchainImageViews[i]);
+        if(Result != VK_SUCCESS)
+        {
+            SDL_Log("Failed to create image view: %d", Result);
+            return SDL_APP_FAILURE;
+        }
+    }
+    
+    char *VertexShaderPath;
+    char *FragmentShaderPath;
+    SDL_asprintf(&VertexShaderPath, "%svert.spv", SDL_GetBasePath());
+    SDL_asprintf(&FragmentShaderPath, "%sfrag.spv", SDL_GetBasePath());
+    
+    VkShaderModule VertexShaderModule = LoadShaderModule(VertexShaderPath, &Transient);
+    VkShaderModule FragmentShaderModule = LoadShaderModule(FragmentShaderPath, &Transient);
+    
+    if(VertexShaderModule == VK_NULL_HANDLE || FragmentShaderModule == VK_NULL_HANDLE)
+    {
+        SDL_Log("Failed to create create shader module");
+        return SDL_APP_FAILURE;
+    }
+    
+    VkPipelineShaderStageCreateInfo VertexShaderStageCreateInfo = 
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .stage = VK_SHADER_STAGE_VERTEX_BIT,
+        .module = VertexShaderModule,
+        .pName = "main",
+        .pSpecializationInfo = NULL,
+        
+    };
+    
+    VkPipelineShaderStageCreateInfo FragmentShaderStageCreateInfo = 
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .module = FragmentShaderModule,
+        .pName = "main",
+        .pSpecializationInfo = NULL,
+        
+    };
+    
+    VkPipelineShaderStageCreateInfo ShaderStages[] = { VertexShaderStageCreateInfo, FragmentShaderStageCreateInfo };
+    
+    VkPipelineVertexInputStateCreateInfo VertexInputCreateInfo = 
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .vertexBindingDescriptionCount = 0,
+        .pVertexBindingDescriptions = NULL,
+        .vertexAttributeDescriptionCount = 0,
+        .pVertexAttributeDescriptions = NULL,
+    };
+    
+    VkPipelineInputAssemblyStateCreateInfo InputAssemblyCreateInfo = 
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .primitiveRestartEnable = VK_FALSE,
+    };
+    
+    VkViewport Viewport = 
+    {
+        .x = 0.0f,
+        .y = 0.0f,
+        .width = (f32)SwapchainExtent.width,
+        .height = (f32)SwapchainExtent.height,
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f,
+    };
+    VkRect2D Scissor = 
+    {
+        .offset = { 0, 0 },
+        .extent = SwapchainExtent,
+    };
+    
+    VkPipelineViewportStateCreateInfo ViewportStateCreateInfo = 
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .viewportCount = 1,
+        .pViewports = &Viewport,
+        .scissorCount = 1,
+        .pScissors = &Scissor,
+    };
+    
+    VkPipelineRasterizationStateCreateInfo RasterizationStateCreateInfo = 
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .depthClampEnable = VK_FALSE,
+        .rasterizerDiscardEnable = VK_FALSE,
+        .polygonMode = VK_POLYGON_MODE_FILL,
+        .cullMode = VK_CULL_MODE_BACK_BIT,
+        .frontFace = VK_FRONT_FACE_CLOCKWISE,
+        .depthBiasEnable = VK_FALSE,
+        .depthBiasConstantFactor = 0.0f,
+        .depthBiasClamp = 0.0f,
+        .depthBiasSlopeFactor = 0.0f,
+        .lineWidth = 1.0f,
+        
+    };
+    
+    VkPipelineMultisampleStateCreateInfo MultisampleStateCreateInfo = 
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+        .sampleShadingEnable = VK_FALSE,
+        .minSampleShading = 1.0f,
+        .pSampleMask = NULL,
+        .alphaToCoverageEnable = VK_FALSE,
+        .alphaToOneEnable = VK_FALSE,
+    };
+    
+    VkPipelineColorBlendAttachmentState ColorBlendAttachmentState = 
+    {
+        .blendEnable = VK_FALSE,
+        .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
+        .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
+        .colorBlendOp = VK_BLEND_OP_ADD,
+        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+        .alphaBlendOp = VK_BLEND_OP_ADD,
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+    };
+    
+    
+    VkPipelineColorBlendStateCreateInfo ColorBlendStateCreateInfo = 
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .logicOpEnable = VK_FALSE,
+        .logicOp = VK_LOGIC_OP_COPY,
+        .attachmentCount = 1,
+        .pAttachments = &ColorBlendAttachmentState,
+        .blendConstants = { 0.0f, 0.0f, 0.0f, 0.0f },
+    };
     
     VkQueue GraphicsQueue;
     vkGetDeviceQueue(LogicalDevice, QueueFamilyIndices.GraphicsFamily.Value, 0, &GraphicsQueue);

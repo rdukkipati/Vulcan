@@ -185,3 +185,6 @@ typedef struct game_state
 
 #define GAME_UPDATE_AND_RENDER(name) void name(memory *Memory, game_input *Input)
 typedef GAME_UPDATE_AND_RENDER(game_update_and_render);
+
+#define Clamp(Value, Min, Max) ((Value) < (Min) ? (Min) : ((Value) > (Max) ? (Max) : (Value)))
+

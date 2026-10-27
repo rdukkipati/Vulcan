@@ -97,5 +97,63 @@ typedef struct swapchain_support_details
     VkPresentModeKHR *PresentModes;
 } swapchain_support_details;
 
+VkShaderModule LoadShaderModule(char *ShaderPath, arena *Transient)
+{
+    VkShaderModule ShaderModule = VK_NULL_HANDLE;
+    
+    i32 FileDescriptor = open(ShaderPath, O_RDONLY);
+    if(FileDescriptor == -1)
+    {
+        SDL_Log("Failed to open shader .spv file");
+        return VK_NULL_HANDLE;
+    }
+    
+    struct stat FileStatus;
+    if(fstat(FileDescriptor, &FileStatus) == -1 || FileStatus.st_size <= 0 || (uintmax_t)FileStatus.st_size > SIZE_MAX || FileStatus.st_size % sizeof(u32) != 0)
+    {
+        SDL_Log("Failed to get shader file status");
+        return VK_NULL_HANDLE;
+    }
+    
+    size_t FileSize = (size_t)FileStatus.st_size;
+    
+    char *ShaderBytes = PushArray(Transient, char, FileSize);
+    
+    size_t BytesRead = 0;
+    while(BytesRead < FileSize)
+    {
+        ssize_t Result = read(FileDescriptor, (char *)ShaderBytes + BytesRead, FileSize - BytesRead);
+        if(Result <= 0)
+        {
+            SDL_Log("Failed to read bytes from shader .spv file");
+            return VK_NULL_HANDLE;
+        }
+        
+        BytesRead += (size_t)Result;
+    }
+    
+    close(FileDescriptor);
+    
+    VkShaderModuleCreateInfo ShaderModuleCreateInfo = 
+    {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .codeSize = FileSize,
+        .pCode = (u32 *)VertexShaderCode,
+    };
+    
+    {
+        VkResult Result = vkCreateShaderModule(LogicalDevice, &ShaderModuleCreateInfo, NULL, &ShaderModule);
+        if(Result != VK_SUCCESS)
+        {
+            SDL_Log("Failed to create shader module");
+            return VK_NULL_HANDLE;
+        }
+    }
+    
+    return ShaderModule;
+}
+
 
 

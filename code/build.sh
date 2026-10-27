@@ -10,4 +10,8 @@ clang -std=c99 -g -O0 -DOS_LINUX=1 -DDEBUG=1 -shared -fPIC "${COMMON_FLAGS[@]}" 
 
 clang -std=c99 -g -O0 -DOS_LINUX=1 -DDEBUG=1 "${COMMON_FLAGS[@]}" $(pkg-config --cflags sdl3 vulkan) ../code/vulcan.c -o Vulcan $(pkg-config --libs sdl3 vulkan)
 
+glslc ../code/shader.vert -o vert.spv
+
+glslc ../code/shader.frag -o frag.spv
+
 popd > /dev/null
