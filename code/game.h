@@ -1,5 +1,3 @@
-
-
 #include <stdint.h>
 
 #define internal static

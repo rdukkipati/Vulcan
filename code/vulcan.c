@@ -476,7 +476,7 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     }
     
     VkExtent2D SwapchainExtent;
-    VkSurfaceFormatKHR ChosenSurfaceFormat;
+    VkSurfaceFormatKHR SwapchainImageFormat;
     VkPresentModeKHR ChosenPresentMode;
     
     
@@ -485,13 +485,13 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
     {
         if(SwapchainDetails.Formats[j].format == VK_FORMAT_B8G8R8A8_SRGB && SwapchainDetails.Formats[j].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
         {
-            ChosenSurfaceFormat = SwapchainDetails.Formats[j];
+            SwapchainImageFormat = SwapchainDetails.Formats[j];
             DesiredFormatFound = true;
         }
     }
     if(!DesiredFormatFound)
     {
-        ChosenSurfaceFormat = SwapchainDetails.Formats[0];
+        SwapchainImageFormat = SwapchainDetails.Formats[0];
     }
     
     ChosenPresentMode = VK_PRESENT_MODE_FIFO_KHR;
@@ -557,8 +557,8 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
         .flags = 0,
         .surface = Surface,
         .minImageCount = SwapchainImageCount,
-        .imageFormat = ChosenSurfaceFormat.format,
-        .imageColorSpace = ChosenSurfaceFormat.colorSpace,
+        .imageFormat = SwapchainImageFormat.format,
+        .imageColorSpace = SwapchainImageFormat.colorSpace,
         .imageExtent = SwapchainExtent,
         .imageArrayLayers = 1,
         .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
@@ -717,7 +717,7 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
             .flags = 0,
             .image = SwapchainImages[i],
             .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = ChosenSurfaceFormat,
+            .format = SwapchainImageFormat,
             .components = Components,
             .subresourceRange = SubresourceRange,
         };
@@ -780,7 +780,7 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
         .pVertexAttributeDescriptions = NULL,
     };
     
-    VkPipelineInputAssemblyStateCreateInfo InputAssemblyCreateInfo = 
+    VkPipelineInputAssemblyStateCreateInfo InputAssemblyStateCreateInfo = 
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
         .pNext = NULL,
@@ -870,6 +870,121 @@ SDL_AppResult SDL_AppInit(void **AppState, int argc, char *argv[])
         .pAttachments = &ColorBlendAttachmentState,
         .blendConstants = { 0.0f, 0.0f, 0.0f, 0.0f },
     };
+    
+    VkPipelineLayoutCreateInfo PipelineLayoutCreateInfo = 
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .setLayoutCount = 0,
+        .pSetLayouts = NULL,
+        .pushConstantRangeCount = 0,
+        .pPushConstantRanges = NULL,
+    };
+    
+    VkPipelineLayout PipelineLayout;
+    
+    {
+        VkResult Result = vkCreatePipelineLayout(LogicalDevice, &PipelineLayoutCreateInfo, NULL, &PipelineLayout);
+        if(Result != VK_SUCCESS)
+        {
+            SDL_Log("Failed to create pipeline layout: %d", Result);
+            return SDL_APP_FAILURE;
+        }
+    }
+    
+    VkAttachmentDescription ColorAttachmentDescription = 
+    {
+        .flags = 0,
+        .format = SwapchainImageFormat,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+    };
+    
+    VkAttachmentReference ColorAttachmentReference = 
+    {
+        .attachment = 0,
+        .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    };
+    
+    VkSubpassDescription SubpassDescription = 
+    {
+        .flags = 0,
+        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+        .inputAttachmentCount = 0,
+        .pInputAttachments = NULL,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &ColorAttachmentReference,
+        .pResolveAttachments = NULL,
+        .pDepthStencilAttachment = NULL,
+        .preserveAttachmentCount = 0,
+        .pPreserveAttachments = NULL,
+    };
+    
+    VkRenderPass RenderPass;
+    
+    VkRenderPassCreateInfo RenderPassCreateInfo = 
+    {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .attachmentCount = 1,
+        .pAttachments = &ColorAttachmentDescription,
+        .subpassCount = 1,
+        .pSubpasses = &SubpassDescription,
+        .dependencyCount = 0,
+        .pDependencies = NULL,
+    };
+    
+    {
+        VkResult Result = vkCreateRenderPass(LogicalDevice, &RenderPassCreateInfo, NULL, &RenderPass);
+        if(Result != VK_SUCCESS)
+        {
+            SDL_Log("Failed to create render pass: %d", Result);
+            return SDL_APP_FAILURE;
+        }
+    }
+    
+    VkGraphicsPipelineCreateInfo PipelineCreateInfo = 
+    {
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .stageCount = 2,
+        .pStages = ShaderStages,
+        .pVertexInputState = &VertexInputCreateInfo,
+        .pInputAssemblyState = &InputAssemblyStateCreateInfo,
+        .pTessellationState = NULL,
+        .pViewportState = &ViewportStateCreateInfo,
+        .pRasterizationState = &RasterizationStateCreateInfo,
+        .pMultisamplingState = &MultisamplingStateCreateInfo,
+        .pDepthStencilState = NULL,
+        .pColorBlendState = &ColorBlendStateCreateInfo,
+        .pDynamicState = NULL,
+        .layout = PipelineLayout,
+        .renderPass = RenderPass,
+        .subpass = 0,
+        .basePipelineHandle = VK_NULL_HANDLE,
+        .basePipelineIndex = -1,
+        
+    };
+    
+    VkPipeline GraphicsPipeline;
+    {
+        VkResult Result = vkCreateGraphicsPipeline(LogicalDevice, VK_NULL_HANDLE, 1, &PipelineCreateInfo, NULL, &GraphicsPipeline);
+        if(Result != VK_SUCCESS)
+        {
+            SDL_Log("Failed to create graphics pipeline: %d", Result);
+            return SDL_APP_FAILURE;
+        }
+    }
+    
+    
     
     VkQueue GraphicsQueue;
     vkGetDeviceQueue(LogicalDevice, QueueFamilyIndices.GraphicsFamily.Value, 0, &GraphicsQueue);
