@@ -1,12 +1,12 @@
 typedef struct app_state
 {
-    SDL_Window *Window;
-    i32 WindowWidth;
-    i32 WindowHeight;
+    
+    VkDevice LogicalDevice;
+    
     
     u64 FrameStartTime;
     
-    SDL_Time LastDLLWrite;
+    SDL_Time LastGameDLLWrite;
     char *GameDLLPath;
     SDL_SharedObject *GameDLL;
     
@@ -14,10 +14,11 @@ typedef struct app_state
     game_input Input;
     game_state GameState;
     
+    arena Eternal;
+    
     game_update_and_render *GameUpdateAndRender;
 } app_state;
 
-global_variable app_state State;
 
 internal SDL_Time
 SDL_GetLastWriteTime(const char *Filename)
@@ -33,31 +34,28 @@ SDL_GetLastWriteTime(const char *Filename)
 }
 
 internal void
-SDL_LoadGameCode(void)
+SDL_LoadGameCode(void *Data)
 {
-    char *GameDLLPath = State.GameDLLPath;
-    SDL_SharedObject **GameDLL = &(State.GameDLL);
-    game_update_and_render **GameUpdateAndRender = &(State.GameUpdateAndRender);
+    app_state *AppState = (app_state *)Data;
     
-    *GameDLL = SDL_LoadObject(GameDLLPath);
-    if(*GameDLL)
+    AppState->GameDLL = SDL_LoadObject(AppState->GameDLLPath);
+    if(AppState->GameDLL)
     {
-        *GameUpdateAndRender = (game_update_and_render *)SDL_LoadFunction(*GameDLL, "GameUpdateAndRender");
+        AppState->GameUpdateAndRender = (game_update_and_render *)SDL_LoadFunction(AppState->GameDLL, "GameUpdateAndRender");
     }
 }
 
 internal void
-SDL_UnloadGameCode(void)
+SDL_UnloadGameCode(void *Data)
 {
-    SDL_SharedObject **GameDLL = &(State.GameDLL);
-    game_update_and_render **GameUpdateAndRender = &(State.GameUpdateAndRender);
+    app_state *AppState = (app_state *)Data;
     
-    if(*GameDLL)
+    if(AppState->GameDLL)
     {
-        SDL_UnloadObject(*GameDLL);
-        *GameDLL = NULL;
+        SDL_UnloadObject(AppState->GameDLL);
+        AppState->GameDLL = NULL;
     }
-    *GameUpdateAndRender = NULL;
+    AppState->GameUpdateAndRender = NULL;
     
 }
 
@@ -97,7 +95,7 @@ typedef struct swapchain_support_details
     VkPresentModeKHR *PresentModes;
 } swapchain_support_details;
 
-VkShaderModule LoadShaderModule(char *ShaderPath, arena *Transient)
+VkShaderModule LoadShaderModule(char *ShaderPath, arena *Transient, VkDevice LogicalDevice)
 {
     VkShaderModule ShaderModule = VK_NULL_HANDLE;
     
@@ -109,7 +107,7 @@ VkShaderModule LoadShaderModule(char *ShaderPath, arena *Transient)
     }
     
     struct stat FileStatus;
-    if(fstat(FileDescriptor, &FileStatus) == -1 || FileStatus.st_size <= 0 || (uintmax_t)FileStatus.st_size > SIZE_MAX || FileStatus.st_size % sizeof(u32) != 0)
+    if(fstat(FileDescriptor, &FileStatus) == -1 || FileStatus.st_size <= 0 || (uintmax_t)FileStatus.st_size > SIZE_MAX || ((u64)FileStatus.st_size % sizeof(u32) != 0))
     {
         SDL_Log("Failed to get shader file status");
         return VK_NULL_HANDLE;
@@ -140,7 +138,7 @@ VkShaderModule LoadShaderModule(char *ShaderPath, arena *Transient)
         .pNext = NULL,
         .flags = 0,
         .codeSize = FileSize,
-        .pCode = (u32 *)VertexShaderCode,
+        .pCode = (u32 *)ShaderBytes,
     };
     
     {
