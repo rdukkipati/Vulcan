@@ -153,5 +153,33 @@ VkShaderModule LoadShaderModule(char *ShaderPath, arena *Transient, VkDevice Log
     return ShaderModule;
 }
 
+internal b32
+VerifyExtraExtensionsAvailable(const char *ExtraInstanceExtensions, u32 AvailableInstanceExtensionsCount, VkExtensionProperties *AvailableInstanceExtensions)
+{
+    b32 ExtraInstanceExtensionsAvailable = true;
+    u32 i;
+    for(i = 0; i < (u32)ArrayCount(ExtraInstanceExtensions); ++i)
+    {
+        b32 InstanceExtensionFound = false;
+        const char *ExtraInstanceExtension = ExtraInstanceExtensions[i];
+        u32 j;
+        for(j = 0; j < AvailableInstanceExtensionsCount; ++j)
+        {
+            VkExtensionProperties *AvailableExtension = &AvailableInstanceExtensions[j];
+            if(strcmp(ExtraExtension, AvailableExtension->extensionName) == 0)
+            {
+                ExtensionFound = true;
+                break;
+            }
+        }
+        if(!ExtensionFound)
+        {
+            ExtraExtensionsAvailable = false;
+            break;
+        }
+    }
+    
+}
+
 
 
