@@ -35,8 +35,10 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     
     queue_family_indices QueueFamilyIndices;
     swapchain_support_details SwapchainSupportDetails;
-    u32 AvailableSurfaceFormatsCount;
-    u32 AvailablePresentModesCount;
+    
+    VkExtent2D SwapchainExtent;
+    VkSurfaceFormatKHR SwapchainImageFormat;
+    VkPresentModeKHR SwapchainPresentMode;
     
     //=================================================================================
     //=============================INITIALIZE MEMORY===================================
@@ -362,8 +364,6 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         u32 AvailablePhysicalDevicesCount;
         VkPhysicalDevice *AvailablePhysicalDevices;
         
-        ZeroStruct(QueueFamilyIndices);
-        
         
         AvailablePhysicalDevicesCount = 0;
         vkEnumeratePhysicalDevices(VulkanInstance, &AvailablePhysicalDevicesCount, NULL);
@@ -372,42 +372,62 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
             SDL_Log("Failed to find GPUs with Vulkan support!");
             return SDL_APP_FAILURE;
         }
+        
         AvailablePhysicalDevices = PushArray(&Transient, VkPhysicalDevice, AvailablePhysicalDevicesCount);
         vkEnumeratePhysicalDevices(VulkanInstance, &AvailablePhysicalDevicesCount, AvailablePhysicalDevices);
         
-        ChoosePhysicalDevice(AvailablePhysicalDevicesCount, AvailablePhysicalDevices, &Transient, RequiredPhysicalDeviceExtensionsNames, &SwapchainSupportDetails, Surface, &AvailableSurfaceFormatsCount, &AvailablePresentModesCount, &PhysicalDevice, &QueueFamilyIndices);
+        ZeroStruct(QueueFamilyIndices);
         
+        ChoosePhysicalDevice(AvailablePhysicalDevicesCount, AvailablePhysicalDevices, &Transient, RequiredPhysicalDeviceExtensionsNames, &SwapchainSupportDetails, Surface, &PhysicalDevice, &QueueFamilyIndices);
+        
+        
+        if(PhysicalDevice == VK_NULL_HANDLE)
+        {
+            SDL_Log("Failed to find suitable GPU among available options!");
+            return SDL_APP_FAILURE;
+        }
         
         
     }
     
     
+    //=================================================================================
+    //======================CHOOSE SWAPCHAIN ATTRIBUTES================================
+    //=================================================================================
     
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    if(PhysicalDevice == VK_NULL_HANDLE)
     {
-        SDL_Log("Failed to find suitable GPU among availble options!");
-        return SDL_APP_FAILURE;
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
     }
     
-    VkExtent2D SwapchainExtent;
-    VkSurfaceFormatKHR SwapchainImageFormat;
-    VkPresentModeKHR SwapchainPresentMode;
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
     
     b32 DesiredFormatFound = false;

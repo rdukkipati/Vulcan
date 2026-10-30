@@ -91,7 +91,9 @@ typedef union queue_family_indices
 typedef struct swapchain_support_details
 {
     VkSurfaceCapabilitiesKHR SurfaceCapabilities;
+    u32 AvailableSurfaceFormatsCount;
     VkSurfaceFormatKHR *AvailableSurfaceFormats;
+    u32 AvailablePresentModesCount;
     VkPresentModeKHR *AvailablePresentModes;
 } swapchain_support_details;
 
@@ -219,7 +221,7 @@ VerifyValidationLayersAvailable(const char *ValidationLayers, u32 AvailableLayer
 }
 
 internal void
-ChoosePhysicalDevice(u32 AvailablePhysicalDevicesCount, VkPhysicalDevice *AvailablePhysicalDevices, arena *Transient, const char **RequiredPhysicalDeviceExtensionsNames, swapchain_support_details *SwapchainSupportDetails, VkSurfaceKHR Surface, u32 *AvailableSurfaceFormatsCount, u32 *AvailablePresentModesCount, VkPhysicalDevice *PhysicalDevice, queue_family_indices *QueueFamilyIndices)
+ChoosePhysicalDevice(u32 AvailablePhysicalDevicesCount, VkPhysicalDevice *AvailablePhysicalDevices, arena *Transient, const char **RequiredPhysicalDeviceExtensionsNames, swapchain_support_details *SwapchainSupportDetails, VkSurfaceKHR Surface, VkPhysicalDevice *PhysicalDevice, queue_family_indices *QueueFamilyIndices)
 {
     u32 i;
     u32 j;
@@ -305,20 +307,21 @@ ChoosePhysicalDevice(u32 AvailablePhysicalDevicesCount, VkPhysicalDevice *Availa
         //=================================================================================
         ZeroStruct(*SwapchainSupportDetails);
         vkGetPhysicalDeviceSurfaceCapabilitiesKHR(AvailablePhysicalDevice, Surface, &SwapchainSupportDetails->SurfaceCapabilities);
-        *AvailableSurfaceFormatsCount = 0;
-        vkGetPhysicalDeviceSurfaceFormatsKHR(AvailablePhysicalDevice, Surface, AvailableSurfaceFormatsCount, NULL);
-        if(*AvailableSurfaceFormatsCount)
+        
+        vkGetPhysicalDeviceSurfaceFormatsKHR(AvailablePhysicalDevice, Surface, &SwapchainSupportDetails->AvailableSurfaceFormatsCount, NULL);
+        if(SwapchainSupportDetails->AvailableSurfaceFormatsCount)
         {
-            SwapchainSupportDetails->AvailableSurfaceFormats = PushArray(Transient, VkSurfaceFormatKHR, *AvailableSurfaceFormatsCount);
-            vkGetPhysicalDeviceSurfaceFormatsKHR(AvailablePhysicalDevice, Surface, AvailableSurfaceFormatsCount, SwapchainSupportDetails->AvailableSurfaceFormats);
+            SwapchainSupportDetails->AvailableSurfaceFormats = PushArray(Transient, VkSurfaceFormatKHR, SwapchainSupportDetails->AvailableSurfaceFormatsCount);
+            vkGetPhysicalDeviceSurfaceFormatsKHR(AvailablePhysicalDevice, Surface, &SwapchainSupportDetails->AvailableSurfaceFormatsCount, SwapchainSupportDetails->AvailableSurfaceFormats);
         }
         
-        *AvailablePresentModesCount = 0;
-        vkGetPhysicalDeviceSurfacePresentModesKHR(AvailablePhysicalDevice, Surface, AvailablePresentModesCount, NULL);
-        if(*AvailablePresentModesCount)
+        
+        vkGetPhysicalDeviceSurfacePresentModesKHR(AvailablePhysicalDevice, Surface, &SwapchainSupportDetails->AvailablePresentModesCount, NULL);
+        
+        if(SwapchainSupportDetails->AvailablePresentModesCount)
         {
-            SwapchainSupportDetails->AvailablePresentModes = PushArray(Transient, VkPresentModeKHR, *AvailablePresentModesCount);
-            vkGetPhysicalDeviceSurfacePresentModesKHR(AvailablePhysicalDevice, Surface, AvailablePresentModesCount, SwapchainSupportDetails->AvailablePresentModes);
+            SwapchainSupportDetails->AvailablePresentModes = PushArray(Transient, VkPresentModeKHR, SwapchainSupportDetails->AvailablePresentModesCount);
+            vkGetPhysicalDeviceSurfacePresentModesKHR(AvailablePhysicalDevice, Surface, &SwapchainSupportDetails->AvailablePresentModesCount, SwapchainSupportDetails->AvailablePresentModes);
         }
         
         if(SwapchainSupportDetails->AvailableSurfaceFormats == NULL || SwapchainSupportDetails->AvailablePresentModes == NULL)
