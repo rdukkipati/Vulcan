@@ -26,11 +26,17 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     SDL_Window *Window;
     
     VkInstance VulkanInstance;
+    VkDebugUtilsMessengerCreateInfoEXT DebugUtilsMessengerCreateInfo;
     VkDebugUtilsMessengerEXT DebugUtilsMessenger;
     VkSurfaceKHR Surface;
-    VkPhysicalDevice PhysicalDevice = VK_NULL_HANDLE;
+    VkPhysicalDevice PhysicalDevice;
     VkDevice LogicalDevice;
     VkSwapchainKHR Swapchain;
+    
+    queue_family_indices QueueFamilyIndices;
+    swapchain_support_details SwapchainSupportDetails;
+    u32 AvailableSurfaceFormatsCount;
+    u32 AvailablePresentModesCount;
     
     //=================================================================================
     //=============================INITIALIZE MEMORY===================================
@@ -121,22 +127,32 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     }
     
     //=================================================================================
-    //==========================Vulkan Instance Creation================================
+    //==========================VULKAN INSTANCE CREATION===============================
     //=================================================================================
     
     
     {
         
-        VkApplicationInfo AppInfo;
+        VkApplicationInfo AppInfo = 
+        {
+            .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+            .pNext = NULL,
+            .pApplicationName = "Vulcan",
+            .applicationVersion = VK_MAKE_API_VERSION(0, 1, 0, 0),
+            .pEngineName = "No Engine",
+            .engineVersion = VK_MAKE_API_VERSION(0, 1, 0, 0),
+            .apiVersion = VK_API_VERSION_1_0,
+        };
         VkInstanceCreateInfo InstanceCreateInfo;
         
         const char **InstanceExtensions;
-        u32 EnabledLayerCount;
-        const char *const *EnabledLayerNames;
+        u32 InstanceExtensionsCount;
+        u32 EnabledLayersCount;
+        const char *const *EnabledLayersNames;
         const void *pNext;
         
-        VkDebugUtilsMessengerCreateInfoEXT DebugUtilsMessengerCreateInfo
-            
+        
+        
         {
             
 #if DEBUG
@@ -148,7 +164,6 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
 #endif
             
             
-            u32 InstanceExtensionsCount_SDL;
             const char *const *InstanceExtensions_SDL;
             u32 AvailableInstanceExtensionsCount;
             VkExtensionProperties *AvailableInstanceExtensions;
@@ -164,9 +179,11 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
             
             
             
-            
-            InstanceExtensionsCount_SDL = 0;
-            InstanceExtensions_SDL = SDL_Vulkan_GetInstanceExtensions(&InstanceExtensionsCount_SDL);
+            //=================================================================================
+            //=======================GRAB SDL EXTENSIONS FOR VULKAN============================
+            //=================================================================================
+            InstanceExtensionsCount = 0;
+            InstanceExtensions_SDL = SDL_Vulkan_GetInstanceExtensions(&InstanceExtensionsCount);
             if(!InstanceExtensions_SDL)
             {
                 SDL_Log("Failed to get Vulkan Extensions for SDL: %s", SDL_GetError());
@@ -177,7 +194,9 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
 #if DEBUG
             
             
-            
+            //=================================================================================
+            //==================VERIFY EXTRA EXTENSIONS AVAILABLE==============================
+            //=================================================================================
             AvailableInstanceExtensionsCount = 0;
             vkEnumerateInstanceExtensionProperties(NULL, &AvailableInstanceExtensionsCount, NULL);
             
@@ -193,38 +212,16 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
             }
             
             
-            
+            //=================================================================================
+            //==================VERIFY VALIDATION LAYERS AVAILABLE=============================
+            //=================================================================================
             vkEnumerateInstanceLayerProperties(&AvailableLayersCount, NULL);
             
             AvailableLayers = PushArray(&Transient, VkLayerProperties, AvailableLayersCount);
             
             vkEnumerateInstanceLayerProperties(&AvailableLayersCount, AvailableLayers);
             
-            ValidationLayersAvailable = true;
-            for(i = 0; i < (u32)ArrayCount(ValidationLayers); ++i)
-            {
-                
-                b32 LayerFound = false;
-                const char *ValidationLayer = ValidationLayers[i];
-                u32 j;
-                
-                for(j = 0; j < AvailableLayerCount; ++j)
-                {
-                    
-                    VkLayerProperties *AvailableLayer = &AvailableLayers[j];
-                    if(strcmp(ValidationLayer, AvailableLayer->layerName) == 0)
-                    {
-                        LayerFound = true;
-                        break;
-                    }
-                    
-                }
-                if(!LayerFound)
-                {
-                    ValidationLayersAvailable = false;
-                    break;
-                }
-            }
+            ValidationLayersAvailable = VerifyValidationLayersAvailable(ValidationLayers, AvailableLayersCount, AvailableLayers);
             
             if(!ValidationLayersAvailable)
             {
@@ -232,23 +229,29 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
                 return SDL_APP_FAILURE;
             }
             
-            Extensions = PushArray(&Transient, const char *, ExtensionsCount + ArrayCount(ExtraExtensions));
+            //=================================================================================
+            //==================COMBINE SDL & EXTRA EXTENSIONS=================================
+            //=================================================================================
+            InstanceExtensions = PushArray(&Transient, const char *, InstanceExtensionsCount + ArrayCount(ExtraInstanceExtensions));
             
-            for(i = 0; i < ExtensionsCount; ++i)
+            for(i = 0; i < InstanceExtensionsCount; ++i)
             {
-                Extensions[i] = Extensions_SDL[i];
+                InstanceExtensions[i] = InstanceExtensions_SDL[i];
             }
             
-            for(i = 0; i < (u32)ArrayCount(ExtraExtensions); ++i)
+            for(i = 0; i < (u32)ArrayCount(ExtraInstanceExtensions); ++i)
             {
-                Extensions[ExtensionsCount + i] = ExtraExtensions[i];
+                InstanceExtensions[InstanceExtensionsCount + i] = ExtraInstanceExtensions[i];
             }
             
-            ExtensionsCount += ArrayCount(ExtraExtensions);
+            InstanceExtensionsCount += ArrayCount(ExtraInstanceExtensions);
             
-            
-            EnabledLayerCount = ArrayCount(ValidationLayers);
-            EnabledLayerNames = ValidationLayers;
+            //=================================================================================
+            //==================SETUP OTHER VULKAN INSTANCE====================================
+            //========================CREATE INFO STUFF========================================
+            //=================================================================================
+            EnabledLayersCount = ArrayCount(ValidationLayers);
+            EnabledLayersNames = ValidationLayers;
             
             DebugUtilsMessengerCreateInfo = (VkDebugUtilsMessengerCreateInfoEXT) 
             {
@@ -267,8 +270,8 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
 #else
             
             Extensions = Extensions_SDL;
-            EnabledLayerCount = 0;
-            EnabledLayerNames = NULL;
+            EnabledLayersCount = 0;
+            EnabledLayersNames = NULL;
             
             pNext = NULL;
             
@@ -279,27 +282,16 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         
         
         
-        AppInfo = (VkApplicationInfo)
-        {
-            .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-            .pNext = NULL,
-            .pApplicationName = "Vulcan",
-            .applicationVersion = VK_MAKE_API_VERSION(0, 1, 0, 0),
-            .pEngineName = "No Engine",
-            .engineVersion = VK_MAKE_API_VERSION(0, 1, 0, 0),
-            .apiVersion = VK_API_VERSION_1_0,
-        };
-        
         VulkanInstanceCreateInfo = (VkInstanceCreateInfo) 
         {
             .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
             .pNext = pNext,
             .flags = 0,
             .pApplicationInfo = &AppInfo,
-            .enabledLayerCount = EnabledLayerCount,
-            .ppEnabledLayerNames = EnabledLayerNames,
-            .enabledExtensionCount = ExtensionsCount,
-            .ppEnabledExtensionNames = Extensions,
+            .enabledLayerCount = EnabledLayersCount,
+            .ppEnabledLayerNames = EnabledLayersNames,
+            .enabledExtensionCount = InstanceExtensionsCount,
+            .ppEnabledExtensionNames = InstanceExtensions,
         };
         
         {
@@ -312,215 +304,98 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         }
         
         
-        
-        
-        
-        
-        
-        
-        
-        
     }
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
     
     
     
     
     //=================================================================================
     //=======================VALIDATION LAYER DEBUG CALLBACK=========================== 
-    //===============================SETUP PART 2======================================
     //=================================================================================
-    
 #if DEBUG
     
-    PFN_vkCreateDebugUtilsMessengerEXT CreateDebugUtilsMessenger = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(VulkanInstance, "vkCreateDebugUtilsMessengerEXT");
-    if(!CreateDebugUtilsMessenger)
     {
-        SDL_Log("Loading CreateDebugUtilsMessengerEXT function failed");
-        return SDL_APP_FAILURE;
-    }
-    
-    VkDebugUtilsMessengerEXT DebugUtilsMessenger;
-    {
-        VkResult Result = CreateDebugUtilsMessenger(VulkanInstance, &DebugUtilsMessengerCreateInfo, NULL, &DebugUtilsMessenger);
-        if(Result != VK_SUCCESS)
+        PFN_vkCreateDebugUtilsMessengerEXT CreateDebugUtilsMessenger; 
+        
+        CreateDebugUtilsMessenger = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(VulkanInstance, "vkCreateDebugUtilsMessengerEXT");
+        if(!CreateDebugUtilsMessenger)
         {
-            SDL_Log("Creating debug messenger failed: %d", Result);
+            SDL_Log("Loading CreateDebugUtilsMessengerEXT function failed");
             return SDL_APP_FAILURE;
+        }
+        
+        
+        {
+            VkResult Result = CreateDebugUtilsMessenger(VulkanInstance, &DebugUtilsMessengerCreateInfo, NULL, &DebugUtilsMessenger);
+            if(Result != VK_SUCCESS)
+            {
+                SDL_Log("Creating debug messenger failed: %d", Result);
+                return SDL_APP_FAILURE;
+            }
         }
     }
 #endif
     
+    
+    
     //=================================================================================
     //==========================WINDOW SURFACE CREATION================================
     //=================================================================================
-    
-    VkSurfaceKHR Surface;
-    if(!SDL_Vulkan_CreateSurface(Window, VulkanInstance, NULL, &Surface))
     {
-        SDL_Log("Failed to create surface: %s", SDL_GetError());
-        return SDL_APP_FAILURE;
+        if(!SDL_Vulkan_CreateSurface(Window, VulkanInstance, NULL, &Surface))
+        {
+            SDL_Log("Failed to create surface: %s", SDL_GetError());
+            return SDL_APP_FAILURE;
+        }
     }
     
     
     //=================================================================================
     //======================PHYSICAL DEVICE ACQUISITION================================
     //=================================================================================
-    
-    const char *RequiredDeviceExtensions[] = 
     {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-    };
-    
-    VkPhysicalDevice PhysicalDevice = VK_NULL_HANDLE;
-    queue_family_indices QueueFamilyIndices;
-    ZeroStruct(QueueFamilyIndices);
-    
-    u32 AvailableDeviceCount = 0;
-    vkEnumeratePhysicalDevices(VulkanInstance, &AvailableDeviceCount, NULL);
-    if(AvailableDeviceCount == 0)
-    {
-        SDL_Log("Failed to find GPUs with Vulkan support!");
-        return SDL_APP_FAILURE;
+        
+        const char *RequiredPhysicalDeviceExtensionsNames[] = 
+        {
+            VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+        };
+        u32 AvailablePhysicalDevicesCount;
+        VkPhysicalDevice *AvailablePhysicalDevices;
+        
+        ZeroStruct(QueueFamilyIndices);
+        
+        
+        AvailablePhysicalDevicesCount = 0;
+        vkEnumeratePhysicalDevices(VulkanInstance, &AvailablePhysicalDevicesCount, NULL);
+        if(AvailablePhysicalDevicesCount == 0)
+        {
+            SDL_Log("Failed to find GPUs with Vulkan support!");
+            return SDL_APP_FAILURE;
+        }
+        AvailablePhysicalDevices = PushArray(&Transient, VkPhysicalDevice, AvailablePhysicalDevicesCount);
+        vkEnumeratePhysicalDevices(VulkanInstance, &AvailablePhysicalDevicesCount, AvailablePhysicalDevices);
+        
+        ChoosePhysicalDevice(AvailablePhysicalDevicesCount, AvailablePhysicalDevices, &Transient, RequiredPhysicalDeviceExtensionsNames, &SwapchainSupportDetails, Surface, &AvailableSurfaceFormatsCount, &AvailablePresentModesCount, &PhysicalDevice, &QueueFamilyIndices);
+        
+        
+        
     }
     
-    VkPhysicalDevice *AvailablePhysicalDevices = PushArray(&Transient, VkPhysicalDevice, AvailableDeviceCount);
-    vkEnumeratePhysicalDevices(VulkanInstance, &AvailableDeviceCount, AvailablePhysicalDevices);
     
     
     
-    swapchain_support_details SwapchainDetails;
-    u32 FormatCount;
-    u32 PresentModeCount;
     
-    for(u32 i = 0; i < AvailableDeviceCount; ++i)
-    {
-        
-        VkPhysicalDevice AvailableDevice = AvailablePhysicalDevices[i];
-        
-        
-        u32 AvailableDeviceExtensionsCount;
-        vkEnumerateDeviceExtensionProperties(AvailableDevice, NULL, &AvailableDeviceExtensionsCount, NULL);
-        VkExtensionProperties *AvailableDeviceExtensions = PushArray(&Transient, VkExtensionProperties, AvailableDeviceExtensionsCount);
-        vkEnumerateDeviceExtensionProperties(AvailableDevice, NULL, &AvailableDeviceExtensionsCount, AvailableDeviceExtensions);
-        
-        b32 RequiredDeviceExtensionsSupported = true;
-        for(u32 j = 0; j < (u32)ArrayCount(RequiredDeviceExtensions); ++j)
-        {
-            const char *RequiredExtension = RequiredDeviceExtensions[j];
-            b32 Exists = false;
-            for(u32 k = 0; k < AvailableDeviceExtensionsCount; ++k)
-            {
-                const char *AvailableExtension = AvailableDeviceExtensions[k].extensionName;
-                if(strcmp(RequiredExtension, AvailableExtension) == 0)
-                {
-                    Exists = true;
-                    break;
-                }
-                
-            }
-            if(!Exists)
-            {
-                RequiredDeviceExtensionsSupported = false;
-                break;
-            }
-            
-        }
-        
-        if(!RequiredDeviceExtensionsSupported)
-        {
-            continue;
-        }
-        
-        
-        
-        ZeroStruct(SwapchainDetails);
-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(AvailableDevice, Surface, &SwapchainDetails.Capabilities);
-        FormatCount = 0;
-        vkGetPhysicalDeviceSurfaceFormatsKHR(AvailableDevice, Surface, &FormatCount, NULL);
-        if(FormatCount)
-        {
-            SwapchainDetails.Formats = PushArray(&Transient, VkSurfaceFormatKHR, FormatCount);
-            vkGetPhysicalDeviceSurfaceFormatsKHR(AvailableDevice, Surface, &FormatCount, SwapchainDetails.Formats);
-        }
-        
-        PresentModeCount = 0;
-        vkGetPhysicalDeviceSurfaceFormatsKHR(AvailableDevice, Surface, &PresentModeCount, NULL);
-        if(PresentModeCount)
-        {
-            SwapchainDetails.PresentModes = PushArray(&Transient, VkPresentModeKHR, PresentModeCount);
-            vkGetPhysicalDeviceSurfacePresentModesKHR(AvailableDevice, Surface, &PresentModeCount, SwapchainDetails.PresentModes);
-        }
-        
-        if(SwapchainDetails.Formats == NULL || SwapchainDetails.PresentModes == NULL)
-        {
-            continue;
-        }
-        
-        VkPhysicalDeviceProperties DeviceProperties;
-        vkGetPhysicalDeviceProperties(AvailableDevice, &DeviceProperties);
-        
-        VkPhysicalDeviceFeatures DeviceFeatures; vkGetPhysicalDeviceFeatures(AvailableDevice, &DeviceFeatures);
-        
-        queue_family_indices Temp_QueueFamilyIndices;
-        ZeroStruct(Temp_QueueFamilyIndices);
-        
-        u32 QueueFamilyCount = 0;
-        vkGetPhysicalDeviceQueueFamilyProperties(AvailableDevice, &QueueFamilyCount, NULL);
-        
-        VkQueueFamilyProperties *AvailableQueueFamilies = PushArray(&Transient, VkQueueFamilyProperties, QueueFamilyCount);
-        vkGetPhysicalDeviceQueueFamilyProperties(AvailableDevice, &QueueFamilyCount, AvailableQueueFamilies);
-        b32 QueueFamiliesSupported = false;
-        b32 Graphics = false;
-        b32 Present = false;
-        for(u32 j = 0; j < QueueFamilyCount; ++j)
-        {
-            VkQueueFamilyProperties *QueueFamily = &AvailableQueueFamilies[j];
-            if(QueueFamily->queueFlags & VK_QUEUE_GRAPHICS_BIT)
-            {
-                Temp_QueueFamilyIndices.GraphicsFamily.HasValue = true;
-                Temp_QueueFamilyIndices.GraphicsFamily.Value = j;
-                Graphics = true;
-            }
-            
-            VkBool32 PresentSupport = false;
-            vkGetPhysicalDeviceSurfaceSupportKHR(AvailableDevice, j, Surface, &PresentSupport);
-            if(PresentSupport)
-            {
-                Temp_QueueFamilyIndices.PresentFamily.HasValue = true;
-                Temp_QueueFamilyIndices.PresentFamily.Value = j;
-                Present = true;
-            }
-            
-            if(Graphics && Present)
-            {
-                QueueFamiliesSupported = true;
-                break;
-            }
-        }
-        
-        
-        if(QueueFamiliesSupported)
-        {
-            PhysicalDevice = AvailableDevice;
-            QueueFamilyIndices = Temp_QueueFamilyIndices;
-            
-            break;
-        }
-        
-    }
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
     
     
