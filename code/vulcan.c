@@ -36,14 +36,15 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     queue_family_indices QueueFamilyIndices;
     swapchain_support_details SwapchainSupportDetails;
     
-    VkExtent2D SwapchainExtent;
     VkSurfaceFormatKHR SwapchainImageFormat;
     VkPresentModeKHR SwapchainPresentMode;
+    VkExtent2D SwapchainExtent;
+    u32 SwapchainImageCount;
+    
     
     //=================================================================================
     //=============================INITIALIZE MEMORY===================================
     //=================================================================================
-    
     {    
         
         memory Memory;
@@ -357,7 +358,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     //=================================================================================
     {
         
-        const char *RequiredPhysicalDeviceExtensionsNames[] = 
+        const char *RequiredDeviceExtensionsNames[] = 
         {
             VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         };
@@ -378,7 +379,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         
         ZeroStruct(QueueFamilyIndices);
         
-        ChoosePhysicalDevice(AvailablePhysicalDevicesCount, AvailablePhysicalDevices, &Transient, RequiredPhysicalDeviceExtensionsNames, &SwapchainSupportDetails, Surface, &PhysicalDevice, &QueueFamilyIndices);
+        ChoosePhysicalDevice(AvailablePhysicalDevicesCount, AvailablePhysicalDevices, &Transient, RequiredDeviceExtensionsNames, &SwapchainSupportDetails, Surface, &PhysicalDevice, &QueueFamilyIndices);
         
         
         if(PhysicalDevice == VK_NULL_HANDLE)
@@ -392,136 +393,96 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     
     
     //=================================================================================
-    //======================CHOOSE SWAPCHAIN ATTRIBUTES================================
+    //=======================CHOOSE SWAPCHAIN ATTRIBUTES===============================
     //=================================================================================
-    
     {
         
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-    }
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    b32 DesiredFormatFound = false;
-    for(u32 j = 0; j < FormatCount; ++j)
-    {
-        if(SwapchainDetails.Formats[j].format == VK_FORMAT_B8G8R8A8_SRGB && SwapchainDetails.Formats[j].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+        ChooseSwapchainImageFormat(&SwapchainImageFormat, &SwapchainSupportDetails);
+        ChooseSwapchainPresentMode(&SwapchainPresentMode);
+        if(ChooseSwapchainExtent(&SwapchainExtent, &SwapchainSupportDetails, Window) == SDL_APP_FAILURE)
         {
-            SwapchainImageFormat = SwapchainDetails.Formats[j];
-            DesiredFormatFound = true;
-        }
-    }
-    if(!DesiredFormatFound)
-    {
-        SwapchainImageFormat = SwapchainDetails.Formats[0];
-    }
-    
-    SwapchainPresentMode = VK_PRESENT_MODE_FIFO_KHR;
-    
-    
-    if(SwapchainDetails.Capabilities.currentExtent.width != UINT32_MAX)
-    {
-        SwapchainExtent = SwapchainDetails.Capabilities.currentExtent;
-    }
-    else
-    {
-        int width, height;
-        if(!SDL_GetWindowSizeInPixels(Window, &width, &height))
-        {
-            SDL_Log("Failed to get window size in pixels: %s", SDL_GetError());
             return SDL_APP_FAILURE;
         }
-        VkExtent2D Extent = 
+        ChooseSwapchainImageCount(&SwapchainImageCount, &SwapchainSupportDetails);
+        
+    }
+    
+    //=================================================================================
+    //============================CREATE SWAPCHAIN=====================================
+    //================================================================================= 
+    {
+        
+        VkSharingMode SwapchainImageSharingMode;
+        u32 SwapchainQueueFamilyIndexCount;
+        u32 *SwapchainQueueFamilyIndices;
+        
+        ChooseSwapchainImageSharingMode(&SwapchainImageSharingMode, &SwapchainQueueFamilyIndexCount, &SwapchainQueueFamilyIndices, &Transient, &QueueFamilyIndices);
+        
+        
+        VkSwapchainCreateInfoKHR SwapchainCreateInfo = 
         {
-            .width = (u32)width,
-            .height = (u32)height,
+            .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR ,
+            .pNext = NULL,
+            .flags = 0,
+            .surface = Surface,
+            .minImageCount = SwapchainImageCount,
+            .imageFormat = SwapchainImageFormat.format,
+            .imageColorSpace = SwapchainImageFormat.colorSpace,
+            .imageExtent = SwapchainExtent,
+            .imageArrayLayers = 1,
+            .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+            .imageSharingMode = SwapchainImageSharingMode,
+            .queueFamilyIndexCount = SwapchainQueueFamilyIndexCount,
+            .pQueueFamilyIndices = SwapchainQueueFamilyIndices,
+            .preTransform = SwapchainSupportDetails.SurfaceCapabilities.currentTransform,
+            .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+            .presentMode = SwapchainPresentMode,
+            .clipped = VK_TRUE,
+            .oldSwapchain = VK_NULL_HANDLE,
         };
         
-        Extent.width = Clamp(Extent.width, SwapchainDetails.Capabilities.minImageExtent.width, SwapchainDetails.Capabilities.maxImageExtent.width);
-        Extent.height = Clamp(Extent.height, SwapchainDetails.Capabilities.minImageExtent.height, SwapchainDetails.Capabilities.maxImageExtent.height);
         
-        SwapchainExtent = Extent;
-    }
-    
-    u32 SwapchainImageCount = SwapchainDetails.Capabilities.minImageCount;
-    if(SwapchainImageCount <= 2)
-    {
-        SwapchainImageCount = 2;
-    }
-    if(SwapchainDetails.Capabilities.maxImageCount > 0 && SwapchainImageCount > SwapchainDetails.Capabilities.maxImageCount)
-    {
-        SwapchainImageCount = SwapchainDetails.Capabilities.maxImageCount;
-    }
-    
-    Assert(SwapchainImageCount == 2);
-    
-    VkSharingMode ImageSharingMode;
-    u32 QueueFamilyIndexCount;
-    const u32 *pQueueFamilyIndices;
-    u32 QueueFamilyIndexValues[] = {QueueFamilyIndices.GraphicsFamily.Value, QueueFamilyIndices.PresentFamily.Value};
-    if(QueueFamilyIndices.GraphicsFamily.Value != QueueFamilyIndices.PresentFamily.Value)
-    {
-        ImageSharingMode = VK_SHARING_MODE_CONCURRENT;
-        QueueFamilyIndexCount = 2;
-        pQueueFamilyIndices = QueueFamilyIndexValues;
-    }
-    else
-    {
-        ImageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        QueueFamilyIndexCount = 0;
-        pQueueFamilyIndices = NULL;
-    }
-    
-    VkSwapchainCreateInfoKHR SwapchainCreateInfo = 
-    {
-        .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR ,
-        .pNext = NULL,
-        .flags = 0,
-        .surface = Surface,
-        .minImageCount = SwapchainImageCount,
-        .imageFormat = SwapchainImageFormat.format,
-        .imageColorSpace = SwapchainImageFormat.colorSpace,
-        .imageExtent = SwapchainExtent,
-        .imageArrayLayers = 1,
-        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-        .imageSharingMode = ImageSharingMode,
-        .queueFamilyIndexCount = QueueFamilyIndexCount,
-        .pQueueFamilyIndices = pQueueFamilyIndices,
-        .preTransform = SwapchainDetails.Capabilities.currentTransform,
-        .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        .presentMode = SwapchainPresentMode,
-        .clipped = VK_TRUE,
-        .oldSwapchain = VK_NULL_HANDLE,
+        {
+            VkResult Result = vkCreateSwapchainKHR(LogicalDevice, &SwapchainCreateInfo, NULL, &Swapchain);
+            if(Result != VK_SUCCESS)
+            {
+                SDL_Log("Swapchain creation failed: %d", Result);
+                return SDL_APP_FAILURE;
+            }
+        }
         
-    };
+        
+        
+        
+        
+    }
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
     
     
@@ -619,17 +580,6 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         if(Result != VK_SUCCESS)
         {
             SDL_Log("Logical device creation failed");
-            return SDL_APP_FAILURE;
-        }
-    }
-    
-    VkSwapchainKHR Swapchain;
-    
-    {
-        VkResult Result = vkCreateSwapchainKHR(LogicalDevice, &SwapchainCreateInfo, NULL, &Swapchain);
-        if(Result != VK_SUCCESS)
-        {
-            SDL_Log("Swapchain creation failed: %d", Result);
             return SDL_APP_FAILURE;
         }
     }

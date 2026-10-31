@@ -221,7 +221,7 @@ VerifyValidationLayersAvailable(const char *ValidationLayers, u32 AvailableLayer
 }
 
 internal void
-ChoosePhysicalDevice(u32 AvailablePhysicalDevicesCount, VkPhysicalDevice *AvailablePhysicalDevices, arena *Transient, const char **RequiredPhysicalDeviceExtensionsNames, swapchain_support_details *SwapchainSupportDetails, VkSurfaceKHR Surface, VkPhysicalDevice *PhysicalDevice, queue_family_indices *QueueFamilyIndices)
+ChoosePhysicalDevice(u32 AvailablePhysicalDevicesCount, VkPhysicalDevice *AvailablePhysicalDevices, arena *Transient, const char **RequiredDeviceExtensionsNames, swapchain_support_details *SwapchainSupportDetails, VkSurfaceKHR Surface, VkPhysicalDevice *PhysicalDevice, queue_family_indices *QueueFamilyIndices)
 {
     u32 i;
     u32 j;
@@ -265,10 +265,10 @@ ChoosePhysicalDevice(u32 AvailablePhysicalDevicesCount, VkPhysicalDevice *Availa
         
         RequiredPhysicalDeviceExtensionsSupported = true;
         
-        for(j = 0; j < (u32)ArrayCount(RequiredPhysicalDeviceExtensionsNames); ++j)
+        for(j = 0; j < (u32)ArrayCount(RequiredDeviceExtensionsNames); ++j)
         {
             
-            RequiredPhysicalDeviceExtensionName = RequiredPhysicalDeviceExtensionsNames[j];
+            RequiredPhysicalDeviceExtensionName = RequiredDeviceExtensionsNames[j];
             RequiredPhysicalDeviceExtensionExists = false;
             
             for(k = 0; k < AvailablePhysicalDeviceExtensionsCount; ++k)
@@ -400,4 +400,93 @@ ChoosePhysicalDevice(u32 AvailablePhysicalDevicesCount, VkPhysicalDevice *Availa
     
 }
 
+internal void
+ChooseSwapchainImageFormat(VkSurfaceFormatKHR *SwapchainImageFormat, swapchain_support_details *SwapchainSupportDetails)
+{
+    u32 i;
+    b32 DesiredFormatFound = false;
+    for(i = 0; i < SwapchainSupportDetails->AvailableSurfaceFormatsCount; ++i)
+    {
+        if(SwapchainSupportDetails->AvailableSurfaceFormats[i].format == VK_FORMAT_B8G8R8A8_SRGB && SwapchainSupportDetails->AvailableSurfaceFormats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+        {
+            *SwapchainImageFormat = SwapchainSupportDetails->AvailableSurfaceFormats[i];
+            DesiredFormatFound = true;
+        }
+    }
+    if(!DesiredFormatFound)
+    {
+        *SwapchainImageFormat = SwapchainSupportDetails.AvailableSurfaceFormats[0];
+    }
+}
+
+internal void
+ChooseSwapchainPresentMode(VkPresentModeKHR *SwapchainPresentMode)
+{
+    *SwapchainPresentMode = VK_PRESENT_MODE_FIFO_KHR;
+}
+
+internal SDL_AppResult
+ChooseSwapchainExtent(VkExtent2D *SwapchainExtent, swapchain_support_details *SwapchainSupportDetails, SDL_Window *Window)
+{
+    if(SwapchainSupportDetails->SurfaceCapabilities.currentExtent.width != UINT32_MAX)
+    {
+        *SwapchainExtent = SwapchainSupportDetails->SurfaceCapabilities.currentExtent;
+    }
+    else
+    {
+        i32 Width;
+        i32 Height;
+        VkExtent2D Extent;
+        if(!SDL_GetWindowSizeInPixels(Window, &Width, &Height))
+        {
+            SDL_Log("Failed to get window size in pixels: %s", SDL_GetError());
+            return SDL_APP_FAILURE;
+        }
+        Extent = (VkExtent2D) 
+        {
+            .width = (u32)width,
+            .height = (u32)height,
+        };
+        
+        Extent.width = Clamp(Extent.width, SwapchainSupportDetails->SurfaceCapabilities.minImageExtent.width, SwapchainSupportDetails->SurfaceCapabilities.maxImageExtent.width);
+        Extent.height = Clamp(Extent.height, SwapchainSupportDetails->SurfaceCapabilities.minImageExtent.height, SwapchainSupportDetails->SurfaceCapabilities.maxImageExtent.height);
+        
+        *SwapchainExtent = Extent;
+    }
+}
+
+internal void
+ChooseSwapchainImageCount(u32 *SwapchainImageCount, swapchain_support_details *SwapchainSupportDetails)
+{
+    *SwapchainImageCount = SwapchainSupportDetails->SurfaceCapabilities.minImageCount;
+    if(*SwapchainImageCount <= 2)
+    {
+        *SwapchainImageCount = 2;
+    }
+    if(SwapchainSupportDetails->SurfaceCapabilities.maxImageCount > 0 && *SwapchainImageCount > SwapchainSupportDetails->SurfaceCapabilities.maxImageCount)
+    {
+        *SwapchainImageCount = SwapchainSupportDetails->SurfaceCapabilities.maxImageCount;
+    }
+    
+    Assert(*SwapchainImageCount == 2);
+}
+
+internal void
+ChooseSwapchainImageSharingMode(VkSharingMode *SwapchainImageSharingMode, u32 *SwapchainQueueFamilyIndexCount, u32 **SwapchainQueueFamilyIndices, arena *Transient, queue_family_indices *QueueFamilyIndices)
+{
+    if(QueueFamilyIndices->GraphicsFamily.Value != QueueFamilyIndices->PresentFamily.Value)
+    {
+        *SwapchainImageSharingMode = VK_SHARING_MODE_CONCURRENT;
+        *SwapchainQueueFamilyIndexCount = 2;
+        *SwapchainQueueFamilyIndices = PushArray(Transient, u32, 2);
+        (*SwapchainQueueFamilyIndices)[0] = QueueFamilyIndices->GraphicsFamily.Value;
+        (*SwapchainQueueFamilyIndices)[1] = QueueFamilyIndices->PresentFamily.Value;
+    }
+    else
+    {
+        *SwapchainImageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        *SwapchainQueueFamilyIndexCount = 0;
+        *SwapchainQueueFamilyIndices = NULL;
+    }
+}
 
