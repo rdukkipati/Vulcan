@@ -111,7 +111,10 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     optional_u32 Family;
     optional_u32 *Unique;
     u32 UniqueQueueFamilyIndicesCount;
+    f32 QueuePriority;
     VkDeviceQueueCreateInfo *QueueCreateInfos;
+    VkPhysicalDeviceFeatures LogicalDeviceFeatures;
+    VkDeviceCreateInfo LogicalDeviceCreateInfo;
     
     //==================SWAPCHAIN======================
     VkSwapchainKHR Swapchain;
@@ -133,6 +136,16 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     VkComponentMapping Components;
     VkImageSubresourceRange SubresourceRange;
     VkImageViewCreateInfo ImageViewCreateInfo;
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
     
     
@@ -619,11 +632,10 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     //=================================================================================
     //=================================================================================
     
-    UniqueQueueFamilyIndicesCount = 0;
-    
     //=====================COUNT UNIQUE QUEUE FAMILIES=================================
     ZeroArray(UniqueQueueFamilyIndices, MaximumQueueFamilyIndicesCount);
     
+    UniqueQueueFamilyIndicesCount = 0;
     for(i = 0; i < MaximumQueueFamilyIndicesCount; ++i)
     {
         Family = QueueFamilyIndices.E[i];
@@ -652,52 +664,49 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     }
     
     Assert(UniqueQueueFamilyIndicesCount <= MaximumQueueFamilyIndicesCount);
+    
     //======================UNIQUE QUEUE CREATE INFOS==================================
+    QueueCreateInfos = PushArray(&Transient, VkDeviceQueueCreateInfo, UniqueQueueFamilyIndicesCount);
+    
+    QueuePriority = 1.0f;
+    for(i = 0; i < UniqueQueueFamilyIndicesCount; ++i)
     {
-        f32 QueuePriority;
-        QueueCreateInfos = PushArray(&Transient, VkDeviceQueueCreateInfo, UniqueQueueFamilyIndicesCount);
-        
-        QueuePriority = 1.0f;
-        for(i = 0; i < UniqueQueueFamilyIndicesCount; ++i)
+        QueueCreateInfos[i] = (VkDeviceQueueCreateInfo)
         {
-            QueueCreateInfos[i] = (VkDeviceQueueCreateInfo)
-            {
-                .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-                .pNext = NULL,
-                .flags = 0,
-                .queueFamilyIndex = UniqueQueueFamilyIndices[i].Value,
-                .queueCount = 1,
-                .pQueuePriorities = &QueuePriority,
-            };
-        }
-    }
-    //======================LOGICAL DEVICE CREATION====================================
-    {
-        VkPhysicalDeviceFeatures LogicalDeviceFeatures;
-        ZeroStruct(LogicalDeviceFeatures);
-        
-        VkDeviceCreateInfo LogicalDeviceCreateInfo =
-        {
-            .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+            .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
             .pNext = NULL,
             .flags = 0,
-            .queueCreateInfoCount = UniqueQueueFamilyIndicesCount,
-            .pQueueCreateInfos = QueueCreateInfos,
-            .enabledLayerCount = EnabledLayersCount,
-            .ppEnabledLayerNames = EnabledLayersNames,
-            .enabledExtensionCount = ArrayCount(RequiredDeviceExtensionsNames),
-            .ppEnabledExtensionNames = RequiredDeviceExtensionsNames,
-            .pEnabledFeatures = &LogicalDeviceFeatures,
-            
+            .queueFamilyIndex = UniqueQueueFamilyIndices[i].Value,
+            .queueCount = 1,
+            .pQueuePriorities = &QueuePriority,
         };
-        
-        Result = vkCreateDevice(PhysicalDevice, &LogicalDeviceCreateInfo, NULL, &LogicalDevice);
-        if(Result != VK_SUCCESS)
-        {
-            SDL_Log("Logical device creation failed");
-            return SDL_APP_FAILURE;
-        }
     }
+    
+    //======================LOGICAL DEVICE CREATION====================================
+    ZeroStruct(LogicalDeviceFeatures);
+    
+    LogicalDeviceCreateInfo = (VkDeviceCreateInfo)
+    {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .queueCreateInfoCount = UniqueQueueFamilyIndicesCount,
+        .pQueueCreateInfos = QueueCreateInfos,
+        .enabledLayerCount = EnabledLayersCount,
+        .ppEnabledLayerNames = EnabledLayersNames,
+        .enabledExtensionCount = ArrayCount(RequiredDeviceExtensionsNames),
+        .ppEnabledExtensionNames = RequiredDeviceExtensionsNames,
+        .pEnabledFeatures = &LogicalDeviceFeatures,
+        
+    };
+    
+    Result = vkCreateDevice(PhysicalDevice, &LogicalDeviceCreateInfo, NULL, &LogicalDevice);
+    if(Result != VK_SUCCESS)
+    {
+        SDL_Log("Logical device creation failed");
+        return SDL_APP_FAILURE;
+    }
+    
     
     
     
