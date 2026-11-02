@@ -20,441 +20,543 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     (void)argc;
     (void)argv;
     
+    u32 i;
+    u32 j;
+    u32 k;
+    
+    VkResult Result;
+    
+    //==================MEMORY=========================
+    memory Memory;
+    void *BaseAddress;
+    int Flag;
+    arena Eternal;
+    
     app_state *AppState;
     arena Transient;
     
+    //================SDL WINDOW=======================
     SDL_Window *Window;
     
+    //================VULKAN INSTANCE==================
     VkInstance VulkanInstance;
+    const char *ExtraInstanceExtensionsNames[] = 
+    {
+        VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+        
+    };
+    const char *RequiredValidationLayersNames[] = 
+    {
+        "VK_LAYER_KHRONOS_validation",
+    };
+    u32 InstanceExtensionsCount;
+    const char *const *InstanceExtensions_SDL;
+    u32 AvailableInstanceExtensionsCount;
+    VkExtensionProperties *AvailableInstanceExtensions;
+    b32 ExtraInstanceExtensionsAreAvailable;
+    u32 AvailableLayersCount;
+    VkLayerProperties *AvailableLayers;
+    b32 RequiredValidationLayersAreAvailable;
+    const char **InstanceExtensions;
+    u32 EnabledLayersCount;
+    const char *const *EnabledLayersNames;
     VkDebugUtilsMessengerCreateInfoEXT DebugUtilsMessengerCreateInfo;
+    const void *pNext;
+    VkApplicationInfo AppInfo;
+    VkInstanceCreateInfo VulkanInstanceCreateInfo;
+    
+    //================DEBUG MESSENGER==================
     VkDebugUtilsMessengerEXT DebugUtilsMessenger;
+    PFN_vkCreateDebugUtilsMessengerEXT CreateDebugUtilsMessenger; 
+    
+    //===================SURFACE=======================
     VkSurfaceKHR Surface;
+    
+    //================PHYSICAL DEVICE==================
     VkPhysicalDevice PhysicalDevice;
-    VkDevice LogicalDevice;
-    VkSwapchainKHR Swapchain;
-    
+    const char *RequiredDeviceExtensionsNames[] = 
+    {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+    };
     queue_family_indices QueueFamilyIndices;
+    u32 AvailablePhysicalDevicesCount;
+    VkPhysicalDevice *AvailablePhysicalDevices;
+    VkPhysicalDevice AvailablePhysicalDevice;
+    u32 AvailableDeviceExtensionsCount;
+    VkExtensionProperties *AvailableDeviceExtensions;
+    b32 RequiredDeviceExtensionsAreSupported;
+    const char *RequiredDeviceExtensionName;
+    b32 RequiredDeviceExtensionExists;
+    const char *AvailableDeviceExtensionName;
     swapchain_support_details SwapchainSupportDetails;
+    queue_family_indices Temp_QueueFamilyIndices;
+    u32 AvailableQueueFamiliesCount;
+    VkQueueFamilyProperties *AvailableQueueFamilies;
+    b32 RequiredQueueFamiliesAreSupported;
+    b32 GraphicsFamilyExists;
+    b32 PresentFamilyExists;
+    VkQueueFamilyProperties *AvailableQueueFamily;
+    VkBool32 PresentFamilySupported;
     
+    //================LOGICAL DEVICE===================
+    VkDevice LogicalDevice;
+    u32 MaximumQueueFamilyIndicesCount = ArrayCount(QueueFamilyIndices.E);
+    optional_u32 UniqueQueueFamilyIndices[MaximumQueueFamilyIndicesCount]; 
+    optional_u32 Family;
+    optional_u32 *Unique;
+    u32 UniqueQueueFamilyIndicesCount;
+    VkDeviceQueueCreateInfo *QueueCreateInfos;
+    
+    //==================SWAPCHAIN======================
+    VkSwapchainKHR Swapchain;
+    b32 DesiredFormatFound;
     VkSurfaceFormatKHR SwapchainImageFormat;
     VkPresentModeKHR SwapchainPresentMode;
     VkExtent2D SwapchainExtent;
+    u32 MinimumSwapchainImageCount;
+    VkSharingMode SwapchainImageSharingMode;
+    u32 SwapchainQueueFamilyIndexCount;
+    u32 *SwapchainQueueFamilyIndices;
+    VkSwapchainCreateInfoKHR SwapchainCreateInfo;
+    
+    
+    //================IMAGE VIEWS======================
+    VkImageView *SwapchainImageViews;
     u32 SwapchainImageCount;
+    VkImage *SwapchainImages;
+    VkComponentMapping Components;
+    VkImageSubresourceRange SubresourceRange;
+    VkImageViewCreateInfo ImageViewCreateInfo;
     
     
+    
+    //=================================================================================
     //=================================================================================
     //=============================INITIALIZE MEMORY===================================
     //=================================================================================
-    {    
-        
-        memory Memory;
-        void *BaseAddress;
-        int Flag;
-        arena Eternal;
-        
-        
-        Memory = (memory)
-        {
-            .PermanentStorageSize = Gigabytes(1),
-            .PermanentStorage = NULL,
-            .TransientStorageSize = Megabytes(64),
-            .TransientStorage = NULL,
-        };
-        
+    //=================================================================================
+    Memory = (memory)
+    {
+        .PermanentStorageSize = Gigabytes(1),
+        .PermanentStorage = NULL,
+        .TransientStorageSize = Megabytes(64),
+        .TransientStorage = NULL,
+    };
+    
 #if DEBUG
-        BaseAddress = (void *)Terabytes(2);
-        Flag = MAP_FIXED_NOREPLACE;
+    BaseAddress = (void *)Terabytes(2);
+    Flag = MAP_FIXED_NOREPLACE;
 #else
-        BaseAddress = (void *)0;
-        Flag = 0;
+    BaseAddress = (void *)0;
+    Flag = 0;
 #endif
-        
-        Memory.PermanentStorage = mmap(BaseAddress, Memory.PermanentStorageSize + Memory.TransientStorageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | Flag, -1, 0);
-        
-        
-        
-        Memory.TransientStorage = (u8 *)Memory.PermanentStorage + Memory.PermanentStorageSize;
-        
-        if(Memory.PermanentStorage == MAP_FAILED)
-        {
-            SDL_Log("Memory allocate failed");
-            return SDL_APP_FAILURE;
-        }
-        
-        Eternal = (arena) 
-        {
-            .BaseAddress = Memory.PermanentStorage,
-            .RemainingSpace = Memory.PermanentStorageSize,
-        };
-        
-        AppState = PushStruct(&Eternal, app_state);
-        AppState->Memory = Memory;
-        AppState->Eternal = Eternal;
-        
-        *Data = AppState;
-        
-        Transient = (arena)
-        {
-            .BaseAddress = Memory.TransientStorage,
-            .RemainingSpace = Memory.TransientStorageSize,
-        };
-        
+    
+    Memory.PermanentStorage = mmap(BaseAddress, Memory.PermanentStorageSize + Memory.TransientStorageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | Flag, -1, 0);
+    
+    Memory.TransientStorage = (u8 *)Memory.PermanentStorage + Memory.PermanentStorageSize;
+    
+    if(Memory.PermanentStorage == MAP_FAILED)
+    {
+        SDL_Log("Memory allocate failed");
+        return SDL_APP_FAILURE;
     }
     
+    Eternal = (arena) 
+    {
+        .BaseAddress = Memory.PermanentStorage,
+        .RemainingSpace = Memory.PermanentStorageSize,
+    };
+    
+    AppState = PushStruct(&Eternal, app_state);
+    AppState->Memory = Memory;
+    AppState->Eternal = Eternal;
+    
+    *Data = AppState;
+    
+    Transient = (arena)
+    {
+        .BaseAddress = Memory.TransientStorage,
+        .RemainingSpace = Memory.TransientStorageSize,
+    };
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    //=================================================================================
     //=================================================================================
     //=========================INITIALIZE SDL & WINDOW=================================
     //=================================================================================
+    //=================================================================================
     
-    {    
-        SDL_SetAppMetadata("Vulcan", "1.0", "com.example.vulcan");
-        
-        if(!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))
-        {
-            SDL_Log("Couldn't initialize SDL: %s", SDL_GetError());
-            return SDL_APP_FAILURE;
-        }
-        
-#define WINDOW_WIDTH 640
-#define WINDOW_HEIGHT 480
-        
-        Window = SDL_CreateWindow("Vulcan", WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_VULKAN);
-        
-#undef WINDOW_WIDTH
-#undef WINDOW_HEIGHT
-        
-        if(!Window)
-        {
-            SDL_Log("Couldn't create window: %s", SDL_GetError());
-            return SDL_APP_FAILURE;
-        }
+    SDL_SetAppMetadata("Vulcan", "1.0", "com.example.vulcan");
+    
+    if(!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))
+    {
+        SDL_Log("Couldn't initialize SDL: %s", SDL_GetError());
+        return SDL_APP_FAILURE;
     }
     
+#define WINDOW_WIDTH 640
+#define WINDOW_HEIGHT 480
+    
+    Window = SDL_CreateWindow("Vulcan", WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_VULKAN);
+    
+#undef WINDOW_WIDTH
+#undef WINDOW_HEIGHT
+    
+    if(!Window)
+    {
+        SDL_Log("Couldn't create window: %s", SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    //=================================================================================
     //=================================================================================
     //==========================VULKAN INSTANCE CREATION===============================
     //=================================================================================
+    //=================================================================================
     
     
+    //=======================GRAB SDL EXTENSIONS FOR VULKAN============================
+    InstanceExtensionsCount = 0;
+    InstanceExtensions_SDL = SDL_Vulkan_GetInstanceExtensions(&InstanceExtensionsCount);
+    if(!InstanceExtensions_SDL)
     {
-        
-        VkApplicationInfo AppInfo = 
-        {
-            .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-            .pNext = NULL,
-            .pApplicationName = "Vulcan",
-            .applicationVersion = VK_MAKE_API_VERSION(0, 1, 0, 0),
-            .pEngineName = "No Engine",
-            .engineVersion = VK_MAKE_API_VERSION(0, 1, 0, 0),
-            .apiVersion = VK_API_VERSION_1_0,
-        };
-        VkInstanceCreateInfo InstanceCreateInfo;
-        
-        const char **InstanceExtensions;
-        u32 InstanceExtensionsCount;
-        u32 EnabledLayersCount;
-        const char *const *EnabledLayersNames;
-        const void *pNext;
-        
-        
-        
-        {
-            
+        SDL_Log("Failed to get Vulkan Extensions for SDL: %s", SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
+    
+    
+    
 #if DEBUG
-            const char *ExtraInstanceExtensions[] = 
-            {
-                VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
-                
-            };
-#endif
-            
-            
-            const char *const *InstanceExtensions_SDL;
-            u32 AvailableInstanceExtensionsCount;
-            VkExtensionProperties *AvailableInstanceExtensions;
-            b32 ExtraInstanceExtensionsAvailable;
-            const char *ValidationLayers[] = 
-            {
-                "VK_LAYER_KHRONOS_validation",
-            };
-            u32 AvailableLayersCount;
-            VkLayerProperties *AvailableLayers;
-            b32 ValidationLayersAvailable;
-            u32 i;
-            
-            
-            
-            //=================================================================================
-            //=======================GRAB SDL EXTENSIONS FOR VULKAN============================
-            //=================================================================================
-            InstanceExtensionsCount = 0;
-            InstanceExtensions_SDL = SDL_Vulkan_GetInstanceExtensions(&InstanceExtensionsCount);
-            if(!InstanceExtensions_SDL)
-            {
-                SDL_Log("Failed to get Vulkan Extensions for SDL: %s", SDL_GetError());
-                return SDL_APP_FAILURE;
-            }
-            
-            
-#if DEBUG
-            
-            
-            //=================================================================================
-            //==================VERIFY EXTRA EXTENSIONS AVAILABLE==============================
-            //=================================================================================
-            AvailableInstanceExtensionsCount = 0;
-            vkEnumerateInstanceExtensionProperties(NULL, &AvailableInstanceExtensionsCount, NULL);
-            
-            AvailableInstanceExtensions = PushArray(&Transient, VkExtensionProperties, AvailableInstanceExtensionsCount);
-            vkEnumerateInstanceExtensionProperties(NULL, &AvailableInstanceExtensionsCount, AvailableInstanceExtensions);
-            
-            ExtraInstanceExtensionsAvailable = VerifyExtraInstanceExtensionsAvailable(ExtraInstanceExtensions, AvailableInstanceExtensionsCount, AvailableInstanceExtensions);
-            
-            if(!ExtraInstanceExtensionsAvailable)
-            {
-                SDL_Log("Extra Extensions not available");
-                return SDL_APP_FAILURE;
-            }
-            
-            
-            //=================================================================================
-            //==================VERIFY VALIDATION LAYERS AVAILABLE=============================
-            //=================================================================================
-            vkEnumerateInstanceLayerProperties(&AvailableLayersCount, NULL);
-            
-            AvailableLayers = PushArray(&Transient, VkLayerProperties, AvailableLayersCount);
-            
-            vkEnumerateInstanceLayerProperties(&AvailableLayersCount, AvailableLayers);
-            
-            ValidationLayersAvailable = VerifyValidationLayersAvailable(ValidationLayers, AvailableLayersCount, AvailableLayers);
-            
-            if(!ValidationLayersAvailable)
-            {
-                SDL_Log("Validation Layers not available");
-                return SDL_APP_FAILURE;
-            }
-            
-            //=================================================================================
-            //==================COMBINE SDL & EXTRA EXTENSIONS=================================
-            //=================================================================================
-            InstanceExtensions = PushArray(&Transient, const char *, InstanceExtensionsCount + ArrayCount(ExtraInstanceExtensions));
-            
-            for(i = 0; i < InstanceExtensionsCount; ++i)
-            {
-                InstanceExtensions[i] = InstanceExtensions_SDL[i];
-            }
-            
-            for(i = 0; i < (u32)ArrayCount(ExtraInstanceExtensions); ++i)
-            {
-                InstanceExtensions[InstanceExtensionsCount + i] = ExtraInstanceExtensions[i];
-            }
-            
-            InstanceExtensionsCount += ArrayCount(ExtraInstanceExtensions);
-            
-            //=================================================================================
-            //==================SETUP OTHER VULKAN INSTANCE====================================
-            //========================CREATE INFO STUFF========================================
-            //=================================================================================
-            EnabledLayersCount = ArrayCount(ValidationLayers);
-            EnabledLayersNames = ValidationLayers;
-            
-            DebugUtilsMessengerCreateInfo = (VkDebugUtilsMessengerCreateInfoEXT) 
-            {
-                .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-                .pNext = NULL,
-                .flags = 0,
-                .messageSeverity =  VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-                .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-                .pfnUserCallback = VulkanDebugCallback,
-                .pUserData = NULL,
-            };
-            
-            pNext = &DebugUtilsMessengerCreateInfo;
-            
-            
+    
+    //==================VERIFY EXTRA EXTENSIONS AVAILABLE==============================
+    AvailableInstanceExtensionsCount = 0;
+    vkEnumerateInstanceExtensionProperties(NULL, &AvailableInstanceExtensionsCount, NULL);
+    
+    AvailableInstanceExtensions = PushArray(&Transient, VkExtensionProperties, AvailableInstanceExtensionsCount);
+    vkEnumerateInstanceExtensionProperties(NULL, &AvailableInstanceExtensionsCount, AvailableInstanceExtensions);
+    
+    ExtraInstanceExtensionsAreAvailable = VerifyExtraInstanceExtensionsAreAvailable(ExtraInstanceExtensionsNames, ArrayCount(ExtraInstanceExtensionsNames), AvailableInstanceExtensions, AvailableInstanceExtensionsCount);
+    
+    
+    if(!ExtraInstanceExtensionsAreAvailable)
+    {
+        SDL_Log("Extra Extensions not available");
+        return SDL_APP_FAILURE;
+    }
+    
+    //==================VERIFY VALIDATION LAYERS AVAILABLE=============================
+    AvailableLayersCount = 0;
+    vkEnumerateInstanceLayerProperties(&AvailableLayersCount, NULL);
+    
+    AvailableLayers = PushArray(&Transient, VkLayerProperties, AvailableLayersCount);
+    vkEnumerateInstanceLayerProperties(&AvailableLayersCount, AvailableLayers);
+    
+    RequiredValidationLayersAreAvailable = VerifyRequiredValidationLayersAreAvailable(RequiredValidationLayersNames, ArrayCount(RequiredValidationLayersNames), AvailableLayers, AvailableLayersCount);
+    
+    if(!RequiredValidationLayersAreAvailable)
+    {
+        SDL_Log("Validation Layers not available");
+        return SDL_APP_FAILURE;
+    }
+    
+    //==================COMBINE SDL & EXTRA EXTENSIONS=================================
+    InstanceExtensions = PushArray(&Transient, const char *, InstanceExtensionsCount + ArrayCount(ExtraInstanceExtensionsNames));
+    
+    for(i = 0; i < InstanceExtensionsCount; ++i)
+    {
+        InstanceExtensions[i] = InstanceExtensions_SDL[i];
+    }
+    
+    for(i = 0; i < (u32)ArrayCount(ExtraInstanceExtensionsNames); ++i)
+    {
+        InstanceExtensions[InstanceExtensionsCount + i] = ExtraInstanceExtensions[i];
+    }
+    
+    InstanceExtensionsCount += ArrayCount(ExtraInstanceExtensionsNames);
+    
+    //==================SETUP OTHER VULKAN INSTANCE====================================
+    //========================CREATE INFO STUFF========================================
+    EnabledLayersCount = ArrayCount(RequiredValidationLayersNames);
+    EnabledLayersNames = RequiredValidationLayersNames;
+    
+    DebugUtilsMessengerCreateInfo = (VkDebugUtilsMessengerCreateInfoEXT) 
+    {
+        .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+        .pNext = NULL,
+        .flags = 0,
+        .messageSeverity =  VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+        .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+        .pfnUserCallback = VulkanDebugCallback,
+        .pUserData = NULL,
+    };
+    
+    pNext = &DebugUtilsMessengerCreateInfo;
+    
 #else
-            
-            Extensions = Extensions_SDL;
-            EnabledLayersCount = 0;
-            EnabledLayersNames = NULL;
-            
-            pNext = NULL;
-            
+    
+    //==================NO VALIDATION LAYERS OR DEBUG EXTENSIONS=======================
+    InstanceExtensions = Extensions_SDL;
+    EnabledLayersCount = 0;
+    EnabledLayersNames = NULL;
+    
+    pNext = NULL;
+    
 #endif
-            
-            
-        }
-        
-        
-        
-        VulkanInstanceCreateInfo = (VkInstanceCreateInfo) 
-        {
-            .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-            .pNext = pNext,
-            .flags = 0,
-            .pApplicationInfo = &AppInfo,
-            .enabledLayerCount = EnabledLayersCount,
-            .ppEnabledLayerNames = EnabledLayersNames,
-            .enabledExtensionCount = InstanceExtensionsCount,
-            .ppEnabledExtensionNames = InstanceExtensions,
-        };
-        
-        {
-            VkResult Result = vkCreateInstance(&VulkanInstanceCreateInfo, NULL, &VulkanInstance);
-            if(Result != VK_SUCCESS)
-            {
-                SDL_Log("vkCreateInstance failed: %d", Result);
-                return SDL_APP_FAILURE;
-            }
-        }
-        
-        
+    
+    //==========================CREATE VULKAN INSTANCE=================================
+    AppInfo = (VkApplicationInfo)
+    {
+        .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+        .pNext = NULL,
+        .pApplicationName = "Vulcan",
+        .applicationVersion = VK_MAKE_API_VERSION(0, 1, 0, 0),
+        .pEngineName = "No Engine",
+        .engineVersion = VK_MAKE_API_VERSION(0, 1, 0, 0),
+        .apiVersion = VK_API_VERSION_1_0,
+    };
+    
+    
+    VulkanInstanceCreateInfo = (VkInstanceCreateInfo) 
+    {
+        .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+        .pNext = pNext,
+        .flags = 0,
+        .pApplicationInfo = &AppInfo,
+        .enabledLayerCount = EnabledLayersCount,
+        .ppEnabledLayerNames = EnabledLayersNames,
+        .enabledExtensionCount = InstanceExtensionsCount,
+        .ppEnabledExtensionNames = InstanceExtensions,
+    };
+    
+    
+    
+    Result = vkCreateInstance(&VulkanInstanceCreateInfo, NULL, &VulkanInstance);
+    if(Result != VK_SUCCESS)
+    {
+        SDL_Log("vkCreateInstance failed: %d", Result);
+        return SDL_APP_FAILURE;
     }
     
     
     
     
+    
+    
+    
+    
+    
+    
+    
     //=================================================================================
-    //=======================VALIDATION LAYER DEBUG CALLBACK=========================== 
+    //=================================================================================
+    //==========================CREATE DEBUG MESSENGER=================================
+    //=================================================================================
     //=================================================================================
 #if DEBUG
     
+    CreateDebugUtilsMessenger = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(VulkanInstance, "vkCreateDebugUtilsMessengerEXT");
+    if(!CreateDebugUtilsMessenger)
     {
-        PFN_vkCreateDebugUtilsMessengerEXT CreateDebugUtilsMessenger; 
-        
-        CreateDebugUtilsMessenger = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(VulkanInstance, "vkCreateDebugUtilsMessengerEXT");
-        if(!CreateDebugUtilsMessenger)
-        {
-            SDL_Log("Loading CreateDebugUtilsMessengerEXT function failed");
-            return SDL_APP_FAILURE;
-        }
-        
-        
-        {
-            VkResult Result = CreateDebugUtilsMessenger(VulkanInstance, &DebugUtilsMessengerCreateInfo, NULL, &DebugUtilsMessenger);
-            if(Result != VK_SUCCESS)
-            {
-                SDL_Log("Creating debug messenger failed: %d", Result);
-                return SDL_APP_FAILURE;
-            }
-        }
+        SDL_Log("Loading CreateDebugUtilsMessengerEXT function failed");
+        return SDL_APP_FAILURE;
     }
+    
+    Result = CreateDebugUtilsMessenger(VulkanInstance, &DebugUtilsMessengerCreateInfo, NULL, &DebugUtilsMessenger);
+    if(Result != VK_SUCCESS)
+    {
+        SDL_Log("Creating debug messenger failed: %d", Result);
+        return SDL_APP_FAILURE;
+    };
+    
 #endif
     
     
     
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    //=================================================================================
     //=================================================================================
     //==========================WINDOW SURFACE CREATION================================
     //=================================================================================
+    //=================================================================================
+    if(!SDL_Vulkan_CreateSurface(Window, VulkanInstance, NULL, &Surface))
     {
-        if(!SDL_Vulkan_CreateSurface(Window, VulkanInstance, NULL, &Surface))
-        {
-            SDL_Log("Failed to create surface: %s", SDL_GetError());
-            return SDL_APP_FAILURE;
-        }
+        SDL_Log("Failed to create surface: %s", SDL_GetError());
+        return SDL_APP_FAILURE;
     }
     
     
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     //=================================================================================
-    //======================PHYSICAL DEVICE ACQUISITION================================
     //=================================================================================
+    //=========================PHYSICAL DEVICE SELECTION===============================
+    //=================================================================================
+    //=================================================================================
+    
+    ZeroStruct(QueueFamilyIndices);
+    
+    AvailablePhysicalDevicesCount = 0;
+    vkEnumeratePhysicalDevices(VulkanInstance, &AvailablePhysicalDevicesCount, NULL);
+    if(AvailablePhysicalDevicesCount == 0)
     {
-        
-        const char *RequiredDeviceExtensionsNames[] = 
-        {
-            VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-        };
-        u32 AvailablePhysicalDevicesCount;
-        VkPhysicalDevice *AvailablePhysicalDevices;
-        
-        
-        AvailablePhysicalDevicesCount = 0;
-        vkEnumeratePhysicalDevices(VulkanInstance, &AvailablePhysicalDevicesCount, NULL);
-        if(AvailablePhysicalDevicesCount == 0)
-        {
-            SDL_Log("Failed to find GPUs with Vulkan support!");
-            return SDL_APP_FAILURE;
-        }
-        
-        AvailablePhysicalDevices = PushArray(&Transient, VkPhysicalDevice, AvailablePhysicalDevicesCount);
-        vkEnumeratePhysicalDevices(VulkanInstance, &AvailablePhysicalDevicesCount, AvailablePhysicalDevices);
-        
-        ZeroStruct(QueueFamilyIndices);
-        
-        ChoosePhysicalDevice(AvailablePhysicalDevicesCount, AvailablePhysicalDevices, &Transient, RequiredDeviceExtensionsNames, &SwapchainSupportDetails, Surface, &PhysicalDevice, &QueueFamilyIndices);
-        
-        
-        if(PhysicalDevice == VK_NULL_HANDLE)
-        {
-            SDL_Log("Failed to find suitable GPU among available options!");
-            return SDL_APP_FAILURE;
-        }
-        
-        
+        SDL_Log("Failed to find GPUs with Vulkan support!");
+        return SDL_APP_FAILURE;
     }
     
+    AvailablePhysicalDevices = PushArray(&Transient, VkPhysicalDevice, AvailablePhysicalDevicesCount);
+    vkEnumeratePhysicalDevices(VulkanInstance, &AvailablePhysicalDevicesCount, AvailablePhysicalDevices);
     
-    //=================================================================================
-    //=======================CHOOSE SWAPCHAIN ATTRIBUTES===============================
-    //=================================================================================
-    {
-        
-        ChooseSwapchainImageFormat(&SwapchainImageFormat, &SwapchainSupportDetails);
-        ChooseSwapchainPresentMode(&SwapchainPresentMode);
-        if(ChooseSwapchainExtent(&SwapchainExtent, &SwapchainSupportDetails, Window) == SDL_APP_FAILURE)
-        {
-            return SDL_APP_FAILURE;
-        }
-        ChooseSwapchainImageCount(&SwapchainImageCount, &SwapchainSupportDetails);
-        
-    }
+    //======================CHOOSE PHYSICAL DEVICE=====================================
+    PhysicalDevice = VK_NULL_HANDLE;
     
-    //=================================================================================
-    //============================CREATE SWAPCHAIN=====================================
-    //================================================================================= 
+    for(i = 0; i < AvailablePhysicalDevicesCount; ++i)
     {
+        //========================VERIFY REQUIRED PHYSICAL DEVICE==========================
+        //===========================EXTENSIONS ARE AVAILABLE==============================
+        AvailablePhysicalDevice = AvailablePhysicalDevices[i];
+        AvailableDeviceExtensionsCount = 0;
+        AvailableDeviceExtensions = NULL;
         
-        VkSharingMode SwapchainImageSharingMode;
-        u32 SwapchainQueueFamilyIndexCount;
-        u32 *SwapchainQueueFamilyIndices;
+        vkEnumerateDeviceExtensionProperties(AvailablePhysicalDevice, NULL, &AvailableDeviceExtensionsCount, NULL);
+        AvailableDeviceExtensions = PushArray(&Transient, VkExtensionProperties, AvailableDeviceExtensionsCount);
+        vkEnumerateDeviceExtensionProperties(AvailablePhysicalDevice, NULL, &AvailableDeviceExtensionsCount, AvailableDeviceExtensions);
         
-        ChooseSwapchainImageSharingMode(&SwapchainImageSharingMode, &SwapchainQueueFamilyIndexCount, &SwapchainQueueFamilyIndices, &Transient, &QueueFamilyIndices);
-        
-        
-        VkSwapchainCreateInfoKHR SwapchainCreateInfo = 
+        RequiredDeviceExtensionsAreSupported = true;
+        for(j = 0; j < (u32)ArrayCount(RequiredDeviceExtensionsNames); ++j)
         {
-            .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR ,
-            .pNext = NULL,
-            .flags = 0,
-            .surface = Surface,
-            .minImageCount = SwapchainImageCount,
-            .imageFormat = SwapchainImageFormat.format,
-            .imageColorSpace = SwapchainImageFormat.colorSpace,
-            .imageExtent = SwapchainExtent,
-            .imageArrayLayers = 1,
-            .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-            .imageSharingMode = SwapchainImageSharingMode,
-            .queueFamilyIndexCount = SwapchainQueueFamilyIndexCount,
-            .pQueueFamilyIndices = SwapchainQueueFamilyIndices,
-            .preTransform = SwapchainSupportDetails.SurfaceCapabilities.currentTransform,
-            .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-            .presentMode = SwapchainPresentMode,
-            .clipped = VK_TRUE,
-            .oldSwapchain = VK_NULL_HANDLE,
-        };
-        
-        
-        {
-            VkResult Result = vkCreateSwapchainKHR(LogicalDevice, &SwapchainCreateInfo, NULL, &Swapchain);
-            if(Result != VK_SUCCESS)
+            RequiredDeviceExtensionName = RequiredDeviceExtensionsNames[j];
+            RequiredDeviceExtensionExists = false;
+            for(k = 0; k < AvailableDeviceExtensionsCount; ++k)
             {
-                SDL_Log("Swapchain creation failed: %d", Result);
-                return SDL_APP_FAILURE;
+                AvailableDeviceExtensionName = AvailableDeviceExtensions[k].extensionName;
+                if(strcmp(RequiredDeviceExtensionName, AvailableDeviceExtensionName) == 0)
+                {
+                    RequiredDeviceExtensionExists = true;
+                    break;
+                }
+            }
+            if(!RequiredDeviceExtensionsExists)
+            {
+                RequiredDeviceExtensionsAreSupported = false;
+                break;
             }
         }
         
+        if(!RequiredDeviceExtensionsAreSupported)
+        {
+            continue;
+        }
         
+        //========================CHECK SWAPCHAIN SUPPORT==================================
+        ZeroStruct(SwapchainSupportDetails);
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(AvailablePhysicalDevice, Surface, &SwapchainSupportDetails.SurfaceCapabilities);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(AvailablePhysicalDevice, Surface, &SwapchainSupportDetails.AvailableSurfaceFormatsCount, NULL);
+        if(SwapchainSupportDetails.AvailableSurfaceFormatsCount)
+        {
+            SwapchainSupportDetails.AvailableSurfaceFormats = PushArray(&Transient, VkSurfaceFormatKHR, SwapchainSupportDetails.AvailableSurfaceFormatsCount);
+            vkGetPhysicalDeviceSurfaceFormatsKHR(AvailablePhysicalDevice, Surface, &SwapchainSupportDetails.AvailableSurfaceFormatsCount, SwapchainSupportDetails.AvailableSurfaceFormats);
+        }
+        vkGetPhysicalDeviceSurfacePresentModesKHR(AvailablePhysicalDevice, Surface, &SwapchainSupportDetails.AvailablePresentModesCount, NULL);
+        if(SwapchainSupportDetails.AvailablePresentModesCount)
+        {
+            SwapchainSupportDetails.AvailablePresentModes = PushArray(&Transient, VkPresentModeKHR, SwapchainSupportDetails.AvailablePresentModesCount);
+            vkGetPhysicalDeviceSurfacePresentModesKHR(AvailablePhysicalDevice, Surface, &SwapchainSupportDetails.AvailablePresentModesCount, SwapchainSupportDetails.AvailablePresentModes);
+        }
+        if(SwapchainSupportDetails.AvailableSurfaceFormats == NULL || SwapchainSupportDetails.AvailablePresentModes == NULL)
+        {
+            continue;
+        }
         
+        //========================CHECK FOR REQUIRED=======================================
+        //==========================QUEUE FAMILIES=========================================
+        ZeroStruct(Temp_QueueFamilyIndices);
         
+        AvailableQueueFamiliesCount = 0;
         
+        vkGetPhysicalDeviceQueueFamilyProperties(AvailablePhysicalDevice, &AvailableQueueFamiliesCount, NULL);
+        AvailableQueueFamilies = PushArray(&Transient, VkQueueFamilyProperties, AvailableQueueFamiliesCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(AvailablePhysicalDevice, &AvailableQueueFamiliesCount, AvailableQueueFamilies);
+        
+        RequiredQueueFamiliesAreSupported = false;
+        GraphicsFamilyExists = false;
+        PresentFamilyExists = false;
+        for(j = 0; j < AvailableQueueFamiliesCount; ++j)
+        {
+            AvailableQueueFamily = &AvailableQueueFamilies[j];
+            if(AvailableQueueFamily->queueFlags & VK_QUEUE_GRAPHICS_BIT)
+            {
+                Temp_QueueFamilyIndices.GraphicsFamily.HasValue = true;
+                Temp_QueueFamilyIndices.GraphicsFamily.Value = j;
+                GraphicsFamilyExists = true;
+            }
+            
+            PresentFamilySupported = false;
+            vkGetPhysicalDeviceSurfaceSupportKHR(AvailablePhysicalDevice, j, Surface, &PresentFamilySupported);
+            if(PresentFamilySupported)
+            {
+                Temp_QueueFamilyIndices.PresentFamily.HasValue = true;
+                Temp_QueueFamilyIndices.PresentFamily.Value = j;
+                PresentFamilyExists = true;
+            }
+            
+            if(GraphicsFamilyExists && PresentFamilyExists)
+            {
+                RequiredQueueFamiliesAreSupported = true;
+                break;
+            }
+        }
+        
+        if(RequiredQueueFamiliesAreSupported)
+        {
+            PhysicalDevice = AvailablePhysicalDevice;
+            QueueFamilyIndices = Temp_QueueFamilyIndices;
+            break;
+        }
+    }
+    
+    if(PhysicalDevice == VK_NULL_HANDLE)
+    {
+        SDL_Log("Failed to find suitable GPU among available options!");
+        return SDL_APP_FAILURE;
     }
     
     
@@ -468,42 +570,23 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     
     
     
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
     //=================================================================================
-    //=====================COUNTING UNIQUE QUEUE FAMILIES==============================
+    //=================================================================================
+    //=========================LOGICAL DEVICE CREATION=================================
+    //=================================================================================
     //=================================================================================
     
+    UniqueQueueFamilyIndicesCount = 0;
     
-    u32 UniqueQueueFamilyIndicesCount = 0;
-    u32 MaximumQueueFamilyIndicesCount = ArrayCount(QueueFamilyIndices.E);
-    optional_u32 UniqueQueueFamilyIndices[MaximumQueueFamilyIndicesCount];
+    //=====================COUNT UNIQUE QUEUE FAMILIES=================================
     ZeroArray(UniqueQueueFamilyIndices, MaximumQueueFamilyIndicesCount);
     
-    // NOTE: Create array of unique queue family indices. Loop through our struct's indices for each family and add them to array if they don't exist in the array. O(n^2) style. We end up with a count of how many unique indices there are and an array of those unique indices.
-    for(u32 i = 0; i < MaximumQueueFamilyIndicesCount; ++i)
+    for(i = 0; i < MaximumQueueFamilyIndicesCount; ++i)
     {
-        optional_u32 Family = QueueFamilyIndices.E[i];
-        for(u32 j = 0; j < MaximumQueueFamilyIndicesCount; ++j)
+        Family = QueueFamilyIndices.E[i];
+        for(j = 0; j < MaximumQueueFamilyIndicesCount; ++j)
         {
-            optional_u32 *Unique = &UniqueQueueFamilyIndices[j];
+            Unique = &UniqueQueueFamilyIndices[j];
             if(!(Unique->HasValue))
             {
                 ++UniqueQueueFamilyIndicesCount;
@@ -521,62 +604,51 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
                 {
                     continue;
                 }
-                
             }
         }
     }
     
     Assert(UniqueQueueFamilyIndicesCount <= MaximumQueueFamilyIndicesCount);
-    
-    //=================================================================================
     //======================UNIQUE QUEUE CREATE INFOS==================================
-    //=================================================================================
-    
-    VkDeviceQueueCreateInfo *QueueCreateInfos = PushArray(&Transient, VkDeviceQueueCreateInfo, UniqueQueueFamilyIndicesCount);
-    
-    VkDevice LogicalDevice;
-    
-    f32 QueuePriority = 1.0f;
-    for(u32 i = 0; i < UniqueQueueFamilyIndicesCount; ++i)
     {
-        u32 QueueFamilyIndex = UniqueQueueFamilyIndices[i].Value;
-        VkDeviceQueueCreateInfo QueueCreateInfo = 
+        f32 QueuePriority;
+        QueueCreateInfos = PushArray(&Transient, VkDeviceQueueCreateInfo, UniqueQueueFamilyIndicesCount);
+        
+        QueuePriority = 1.0f;
+        for(i = 0; i < UniqueQueueFamilyIndicesCount; ++i)
         {
-            .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+            QueueCreateInfos[i] = (VkDeviceQueueCreateInfo)
+            {
+                .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                .pNext = NULL,
+                .flags = 0,
+                .queueFamilyIndex = UniqueQueueFamilyIndices[i].Value,
+                .queueCount = 1,
+                .pQueuePriorities = &QueuePriority,
+            };
+        }
+    }
+    //======================LOGICAL DEVICE CREATION====================================
+    {
+        VkPhysicalDeviceFeatures LogicalDeviceFeatures;
+        ZeroStruct(LogicalDeviceFeatures);
+        
+        VkDeviceCreateInfo LogicalDeviceCreateInfo =
+        {
+            .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
             .pNext = NULL,
             .flags = 0,
-            .queueFamilyIndex = UniqueQueueFamilyIndices[i].Value,
-            .queueCount = 1,
-            .pQueuePriorities = &QueuePriority,
+            .queueCreateInfoCount = UniqueQueueFamilyIndicesCount,
+            .pQueueCreateInfos = QueueCreateInfos,
+            .enabledLayerCount = EnabledLayersCount,
+            .ppEnabledLayerNames = EnabledLayersNames,
+            .enabledExtensionCount = ArrayCount(RequiredDeviceExtensionsNames),
+            .ppEnabledExtensionNames = RequiredDeviceExtensionsNames,
+            .pEnabledFeatures = &LogicalDeviceFeatures,
+            
         };
-        QueueCreateInfos[i] = QueueCreateInfo;
-    }
-    
-    //=================================================================================
-    //======================LOGICAL DEVICE CREATION====================================
-    //=================================================================================
-    
-    
-    VkPhysicalDeviceFeatures LogicalDeviceFeatures;
-    ZeroStruct(LogicalDeviceFeatures);
-    
-    VkDeviceCreateInfo LogicalDeviceCreateInfo =
-    {
-        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pNext = NULL,
-        .flags = 0,
-        .queueCreateInfoCount = UniqueQueueFamilyIndicesCount,
-        .pQueueCreateInfos = QueueCreateInfos,
-        .enabledLayerCount = EnabledLayerCount,
-        .ppEnabledLayerNames = EnabledLayerNames,
-        .enabledExtensionCount = ArrayCount(RequiredDeviceExtensions),
-        .ppEnabledExtensionNames = RequiredDeviceExtensions,
-        .pEnabledFeatures = &LogicalDeviceFeatures,
         
-    };
-    
-    {
-        VkResult Result = vkCreateDevice(PhysicalDevice, &LogicalDeviceCreateInfo, NULL, &LogicalDevice);
+        Result = vkCreateDevice(PhysicalDevice, &LogicalDeviceCreateInfo, NULL, &LogicalDevice);
         if(Result != VK_SUCCESS)
         {
             SDL_Log("Logical device creation failed");
@@ -584,14 +656,154 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         }
     }
     
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    //=================================================================================
+    //=================================================================================
+    //============================CREATE SWAPCHAIN=====================================
+    //================================================================================= 
+    //================================================================================= 
+    
+    //======================CHOOSE SWAPCHAIN IMAGE FORMAT==============================
+    DesiredFormatFound = false;
+    for(i = 0; i < SwapchainSupportDetails.AvailableSurfaceFormatsCount; ++i)
+    {
+        if(SwapchainSupportDetails.AvailableSurfaceFormats[i].format == VK_FORMAT_B8G8R8A8_SRGB && SwapchainSupportDetails.AvailableSurfaceFormats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+        {
+            SwapchainImageFormat = SwapchainSupportDetails.AvailableSurfaceFormats[i];
+            DesiredFormatFound = true;
+        }
+    }
+    if(!DesiredFormatFound)
+    {
+        SwapchainImageFormat = SwapchainSupportDetails.AvailableSurfaceFormats[0];
+    }
+    
+    
+    
+    //======================CHOOSE SWAPCHAIN PRESENT MODE==============================
+    SwapchainPresentMode = VK_PRESENT_MODE_FIFO_KHR;
+    
+    //=========================CHOOSE SWAPCHAIN EXTENT=================================
+    if(SwapchainSupportDetails.SurfaceCapabilities.currentExtent.width != UINT32_MAX)
+    {
+        SwapchainExtent = SwapchainSupportDetails.SurfaceCapabilities.currentExtent;
+    }
+    else
+    {
+        i32 Width;
+        i32 Height;
+        VkExtent2D Extent;
+        if(!SDL_GetWindowSizeInPixels(Window, &Width, &Height))
+        {
+            SDL_Log("Failed to get window size in pixels: %s", SDL_GetError());
+            return SDL_APP_FAILURE;
+        }
+        Extent = (VkExtent2D) 
+        {
+            .width = (u32)width,
+            .height = (u32)height,
+        };
+        
+        Extent.width = Clamp(Extent.width, SwapchainSupportDetails.SurfaceCapabilities.minImageExtent.width, SwapchainSupportDetails.SurfaceCapabilities.maxImageExtent.width);
+        Extent.height = Clamp(Extent.height, SwapchainSupportDetails.SurfaceCapabilities.minImageExtent.height, SwapchainSupportDetails.SurfaceCapabilities.maxImageExtent.height);
+        
+        SwapchainExtent = Extent;
+    }
+    
+    //==================CHOOSE MINIMUM SWAPCHAIN IMAGE COUNT===========================
+    MinimumSwapchainImageCount = SwapchainSupportDetails.SurfaceCapabilities.minImageCount;
+    
+    if(SwapchainSupportDetails.SurfaceCapabilities.maxImageCount > 0 && MinimumSwapchainImageCount > SwapchainSupportDetails.SurfaceCapabilities.maxImageCount)
+    {
+        MinimumSwapchainImageCount = SwapchainSupportDetails.SurfaceCapabilities.maxImageCount;
+    }
+    
+    Assert(*MinimumSwapchainImageCount == 2);
+    
+    
+    //==================CHOOSE SWAPCHAIN IMAGE SHARING MODE============================
+    if(QueueFamilyIndices.GraphicsFamily.Value != QueueFamilyIndices.PresentFamily.Value)
+    {
+        SwapchainImageSharingMode = VK_SHARING_MODE_CONCURRENT;
+        SwapchainQueueFamilyIndexCount = 2;
+        SwapchainQueueFamilyIndices = PushArray(&Transient, u32, 2);
+        SwapchainQueueFamilyIndices[0] = QueueFamilyIndices.GraphicsFamily.Value;
+        SwapchainQueueFamilyIndices[1] = QueueFamilyIndices.PresentFamily.Value;
+    }
+    else
+    {
+        SwapchainImageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        SwapchainQueueFamilyIndexCount = 0;
+        SwapchainQueueFamilyIndices = NULL;
+    }
+    
+    
+    
+    //=========================CREATE SWAPCHAIN========================================
+    SwapchainCreateInfo = (VkSwapchainCreateInfoKHR)
+    {
+        .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR ,
+        .pNext = NULL,
+        .flags = 0,
+        .surface = Surface,
+        .minImageCount = MinimumSwapchainImageCount,
+        .imageFormat = SwapchainImageFormat.format,
+        .imageColorSpace = SwapchainImageFormat.colorSpace,
+        .imageExtent = SwapchainExtent,
+        .imageArrayLayers = 1,
+        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .imageSharingMode = SwapchainImageSharingMode,
+        .queueFamilyIndexCount = SwapchainQueueFamilyIndexCount,
+        .pQueueFamilyIndices = SwapchainQueueFamilyIndices,
+        .preTransform = SwapchainSupportDetails.SurfaceCapabilities.currentTransform,
+        .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+        .presentMode = SwapchainPresentMode,
+        .clipped = VK_TRUE,
+        .oldSwapchain = VK_NULL_HANDLE,
+    };
+    
+    
+    Result = vkCreateSwapchainKHR(LogicalDevice, &SwapchainCreateInfo, NULL, &Swapchain);
+    if(Result != VK_SUCCESS)
+    {
+        SDL_Log("Swapchain creation failed: %d", Result);
+        return SDL_APP_FAILURE;
+    }
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    //=================================================================================
+    //=================================================================================
+    //===========================CREATE IMAGE VIEWS====================================
+    //=================================================================================
+    //=================================================================================
     SwapchainImageCount = 0;
     vkGetSwapchainImagesKHR(LogicalDevice, Swapchain, &SwapchainImageCount, NULL);
-    VkImage *SwapchainImages = PushArray(&AppState->Eternal, VkImage, SwapchainImageCount);
+    Assert(SwapchainImageCount == 2);
+    SwapchainImages = PushArray(Transient, VkImage, SwapchainImageCount);
     vkGetSwapchainImagesKHR(LogicalDevice, Swapchain, &SwapchainImageCount, SwapchainImages);
     
-    VkImageView *SwapchainImageViews = PushArray(&AppState->Eternal, VkImageView, SwapchainImageCount);
+    SwapchainImageViews = PushArray(&AppState->Eternal, VkImageView, SwapchainImageCount);
     
-    VkComponentMapping Components =
+    Components = (VkComponentMapping)
     {
         .r = VK_COMPONENT_SWIZZLE_IDENTITY,
         .g = VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -599,7 +811,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         .a = VK_COMPONENT_SWIZZLE_IDENTITY,
     };
     
-    VkImageSubresourceRange SubresourceRange = 
+    SubresourceRange = (VkImageSubresourceRange) 
     {
         .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
         .baseMipLevel = 0,
@@ -608,9 +820,9 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         .layerCount = 1,
     };
     
-    for(u32 i = 0; i < SwapchainImageCount; ++i)
+    for(i = 0; i < SwapchainImageCount; ++i)
     {
-        VkImageViewCreateInfo ImageViewCreateInfo = 
+        ImageViewCreateInfo = (VkImageViewCreateInfo) 
         {
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             .pNext = NULL,
@@ -621,13 +833,46 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
             .components = Components,
             .subresourceRange = SubresourceRange,
         };
-        VkResult Result = vkCreateImageView(LogicalDevice, &ImageViewCreateInfo, NULL, &SwapchainImageViews[i]);
+        
+        
+        Result = vkCreateImageView(LogicalDevice, &ImageViewCreateInfo, NULL, &SwapchainImageViews[i]);
         if(Result != VK_SUCCESS)
         {
             SDL_Log("Failed to create image view: %d", Result);
             return SDL_APP_FAILURE;
         }
     }
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
     char *VertexShaderPath;
     char *FragmentShaderPath;

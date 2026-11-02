@@ -97,7 +97,93 @@ typedef struct swapchain_support_details
     VkPresentModeKHR *AvailablePresentModes;
 } swapchain_support_details;
 
-VkShaderModule LoadShaderModule(char *ShaderPath, arena *Transient, VkDevice LogicalDevice)
+
+
+//=================================================================================
+//==========================VALIDATION LAYER STUFF=================================
+//=================================================================================
+internal b32
+VerifyExtraInstanceExtensionsAreAvailable(const char **ExtraInstanceExtensionsNames, i32 ExtraInstanceExtensionsCount, VkExtensionProperties *AvailableInstanceExtensions,  u32 AvailableInstanceExtensionsCount)
+{
+    u32 i;
+    u32 j;
+    
+    b32 ExtraInstanceExtensionsAreAvailable;
+    b32 ExtraInstanceExtensionFound;
+    const char *ExtraInstanceExtensionName;
+    VkExtensionProperties *AvailableExtension;
+    
+    ExtraInstanceExtensionsAreAvailable = true;
+    for(i = 0; i < (u32)ExtraInstanceExtensionsCount; ++i)
+    {
+        ExtraInstanceExtensionFound = false;
+        ExtraInstanceExtensionName = ExtraInstanceExtensionsNames[i];
+        
+        for(j = 0; j < AvailableInstanceExtensionsCount; ++j)
+        {
+            
+            AvailableExtension = &AvailableInstanceExtensions[j];
+            if(strcmp(ExtraInstanceExtensionName, AvailableExtension->extensionName) == 0)
+            {
+                ExtraInstanceExtensionFound = true;
+                break;
+            }
+            
+        }
+        if(!ExtraInstanceExtensionFound)
+        {
+            ExtraInstanceExtensionsAreAvailable = false;
+            break;
+        }
+    }
+    
+    return ExtraInstanceExtensionsAreAvailable;
+    
+}
+
+internal b32
+VerifyRequiredValidationLayersAreAvailable(const char **RequiredValidationLayersNames, i32 RequiredValidationLayersCount, VkLayerProperties *AvailableLayers, u32 AvailableLayersCount)
+{
+    u32 i;
+    u32 j;
+    
+    b32 RequiredValidationLayersAreAvailable;
+    b32 RequiredLayerFound;
+    const char *RequiredValidationLayerName;
+    VkLayerProperties *AvailableLayer;
+    
+    
+    RequiredValidationLayersAreAvailable = true;
+    for(i = 0; i < (u32)RequiredValidationLayersCount; ++i)
+    {
+        
+        RequiredLayerFound = false;
+        RequiredValidationLayerName = RequiredValidationLayersNames[i];
+        
+        for(j = 0; j < AvailableLayersCount; ++j)
+        {
+            
+            AvailableLayer = &AvailableLayers[j];
+            if(strcmp(RequiredValidationLayerName, AvailableLayer->layerName) == 0)
+            {
+                RequiredLayerFound = true;
+                break;
+            }
+            
+        }
+        if(!RequiredLayerFound)
+        {
+            RequiredValidationLayersAreAvailable = false;
+            break;
+        }
+    }
+    
+    return RequiredValidationLayersAreAvailable;
+    
+}
+
+internal VkShaderModule 
+LoadShaderModule(char *ShaderPath, arena *Transient, VkDevice LogicalDevice)
 {
     VkShaderModule ShaderModule = VK_NULL_HANDLE;
     
@@ -155,338 +241,18 @@ VkShaderModule LoadShaderModule(char *ShaderPath, arena *Transient, VkDevice Log
     return ShaderModule;
 }
 
-internal b32
-VerifyExtraExtensionsAvailable(const char *ExtraInstanceExtensions, u32 AvailableInstanceExtensionsCount, VkExtensionProperties *AvailableInstanceExtensions)
-{
-    b32 ExtraInstanceExtensionsAvailable = true;
-    u32 i;
-    for(i = 0; i < (u32)ArrayCount(ExtraInstanceExtensions); ++i)
-    {
-        b32 InstanceExtensionFound = false;
-        const char *ExtraInstanceExtension = ExtraInstanceExtensions[i];
-        u32 j;
-        for(j = 0; j < AvailableInstanceExtensionsCount; ++j)
-        {
-            VkExtensionProperties *AvailableExtension = &AvailableInstanceExtensions[j];
-            if(strcmp(ExtraExtension, AvailableExtension->extensionName) == 0)
-            {
-                ExtensionFound = true;
-                break;
-            }
-        }
-        if(!ExtensionFound)
-        {
-            ExtraExtensionsAvailable = false;
-            break;
-        }
-    }
-    
-    return ExtraInstanceExtensionsAvailable;
-    
-}
-
-internal b32
-VerifyValidationLayersAvailable(const char *ValidationLayers, u32 AvailableLayersCount, VkLayerProperties *AvailableLayers)
-{
-    
-    b32 ValidationLayersAvailable = true;
-    u32 i;
-    for(i = 0; i < (u32)ArrayCount(ValidationLayers); ++i)
-    {
-        
-        b32 LayerFound = false;
-        const char *ValidationLayer = ValidationLayers[i];
-        u32 j;
-        
-        for(j = 0; j < AvailableLayersCount; ++j)
-        {
-            
-            VkLayerProperties *AvailableLayer = &AvailableLayers[j];
-            if(strcmp(ValidationLayer, AvailableLayer->layerName) == 0)
-            {
-                LayerFound = true;
-                break;
-            }
-            
-        }
-        if(!LayerFound)
-        {
-            ValidationLayersAvailable = false;
-            break;
-        }
-    }
-    
-    return ValidationLayersAvailable;
-    
-}
-
-internal void
-ChoosePhysicalDevice(u32 AvailablePhysicalDevicesCount, VkPhysicalDevice *AvailablePhysicalDevices, arena *Transient, const char **RequiredDeviceExtensionsNames, swapchain_support_details *SwapchainSupportDetails, VkSurfaceKHR Surface, VkPhysicalDevice *PhysicalDevice, queue_family_indices *QueueFamilyIndices)
-{
-    u32 i;
-    u32 j;
-    u32 k;
-    
-    VkPhysicalDevice AvailablePhysicalDevice;
-    u32 AvailablePhysicalDeviceExtensionsCount;
-    VkExtensionProperties *AvailablePhysicalDeviceExtensions;
-    
-    b32 RequiredPhysicalDeviceExtensionsSupported;
-    const char *RequiredPhysicalDeviceExtensionName;
-    b32 RequiredPhysicalDeviceExtensionExists;
-    const char *AvailablePhysicalDeviceExtensionName;
-    
-    queue_family_indices Temp_QueueFamilyIndices;
-    u32 AvailableQueueFamiliesCount;
-    
-    b32 RequiredQueueFamiliesSupported;
-    b32 GraphicsFamilyExists;
-    b32 PresentFamilyExists;
-    
-    VkQueueFamilyProperties *AvailableQueueFamily;
-    VkBool32 PresentFamilySupported;
-    
-    
-    *PhysicalDevice = VK_NULL_HANDLE;
-    
-    for(i = 0; i < AvailablePhysicalDevicesCount; ++i)
-    {
-        //=================================================================================
-        //========================VERIFY REQUIRED PHYSICAL DEVICE==========================
-        //===========================EXTENSIONS ARE AVAILABLE==============================
-        //=================================================================================
-        AvailablePhysicalDevice = AvailablePhysicalDevices[i];
-        AvailablePhysicalDeviceExtensionsCount = 0;
-        AvailablePhysicalDeviceExtensions = NULL;
-        
-        vkEnumerateDeviceExtensionProperties(AvailableDevice, NULL, &AvailablePhysicalDeviceExtensionsCount, NULL);
-        AvailablePhysicalDeviceExtensions = PushArray(Transient, VkExtensionProperties, AvailablePhysicalDeviceExtensionsCount);
-        vkEnumerateDeviceExtensionProperties(AvailableDevice, NULL, &AvailablePhysicalDeviceExtensionsCount, AvailablePhysicalDeviceExtensions);
-        
-        RequiredPhysicalDeviceExtensionsSupported = true;
-        
-        for(j = 0; j < (u32)ArrayCount(RequiredDeviceExtensionsNames); ++j)
-        {
-            
-            RequiredPhysicalDeviceExtensionName = RequiredDeviceExtensionsNames[j];
-            RequiredPhysicalDeviceExtensionExists = false;
-            
-            for(k = 0; k < AvailablePhysicalDeviceExtensionsCount; ++k)
-            {
-                
-                AvailablePhysicalDeviceExtensionName = AvailablePhysicalDeviceExtensions[k].extensionName;
-                
-                if(strcmp(RequiredPhysicalDeviceExtensionName, AvailablePhysicalDeviceExtensionName) == 0)
-                {
-                    
-                    RequiredPhysicalDeviceExtensionExists = true;
-                    break;
-                    
-                }
-                
-            }
-            
-            if(!RequiredPhysicalDeviceExtensionsExists)
-            {
-                
-                RequiredPhysicalDeviceExtensionsSupported = false;
-                break;
-                
-            }
-            
-        }
-        
-        if(!RequiredDeviceExtensionsSupported)
-        {
-            continue;
-        }
-        
-        
-        //=================================================================================
-        //========================CHECK SWAPCHAIN SUPPORT==================================
-        //=================================================================================
-        ZeroStruct(*SwapchainSupportDetails);
-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(AvailablePhysicalDevice, Surface, &SwapchainSupportDetails->SurfaceCapabilities);
-        
-        vkGetPhysicalDeviceSurfaceFormatsKHR(AvailablePhysicalDevice, Surface, &SwapchainSupportDetails->AvailableSurfaceFormatsCount, NULL);
-        if(SwapchainSupportDetails->AvailableSurfaceFormatsCount)
-        {
-            SwapchainSupportDetails->AvailableSurfaceFormats = PushArray(Transient, VkSurfaceFormatKHR, SwapchainSupportDetails->AvailableSurfaceFormatsCount);
-            vkGetPhysicalDeviceSurfaceFormatsKHR(AvailablePhysicalDevice, Surface, &SwapchainSupportDetails->AvailableSurfaceFormatsCount, SwapchainSupportDetails->AvailableSurfaceFormats);
-        }
-        
-        
-        vkGetPhysicalDeviceSurfacePresentModesKHR(AvailablePhysicalDevice, Surface, &SwapchainSupportDetails->AvailablePresentModesCount, NULL);
-        
-        if(SwapchainSupportDetails->AvailablePresentModesCount)
-        {
-            SwapchainSupportDetails->AvailablePresentModes = PushArray(Transient, VkPresentModeKHR, SwapchainSupportDetails->AvailablePresentModesCount);
-            vkGetPhysicalDeviceSurfacePresentModesKHR(AvailablePhysicalDevice, Surface, &SwapchainSupportDetails->AvailablePresentModesCount, SwapchainSupportDetails->AvailablePresentModes);
-        }
-        
-        if(SwapchainSupportDetails->AvailableSurfaceFormats == NULL || SwapchainSupportDetails->AvailablePresentModes == NULL)
-        {
-            continue;
-        }
-        
-        /*
-        VkPhysicalDeviceProperties DeviceProperties;
-        vkGetPhysicalDeviceProperties(AvailableDevice, &DeviceProperties);
-        
-        VkPhysicalDeviceFeatures DeviceFeatures; vkGetPhysicalDeviceFeatures(AvailableDevice, &DeviceFeatures);
-        */
-        
-        //===========================================================================
-        //========================CHECK FOR REQUIRED=================================
-        //==========================QUEUE FAMILIES===================================
-        //===========================================================================
-        ZeroStruct(Temp_QueueFamilyIndices);
-        
-        AvailableQueueFamiliesCount = 0;
-        vkGetPhysicalDeviceQueueFamilyProperties(AvailablePhysicalDevice, &AvailableQueueFamiliesCount, NULL);
-        
-        VkQueueFamilyProperties *AvailableQueueFamilies = PushArray(&Transient, VkQueueFamilyProperties, QueueFamilyCount);
-        vkGetPhysicalDeviceQueueFamilyProperties(AvailableDevice, &QueueFamilyCount, AvailableQueueFamilies);
-        RequiredQueueFamiliesSupported = false;
-        GraphicsFamilyExists = false;
-        PresentFamilyExists = false;
-        
-        for(j = 0; j < QueueFamilyCount; ++j)
-        {
-            
-            AvailableQueueFamily = &AvailableQueueFamilies[j];
-            if(AvailableQueueFamily->queueFlags & VK_QUEUE_GRAPHICS_BIT)
-            {
-                
-                Temp_QueueFamilyIndices.GraphicsFamily.HasValue = true;
-                Temp_QueueFamilyIndices.GraphicsFamily.Value = j;
-                GraphicsFamilyExists = true;
-                
-            }
-            
-            PresentFamilySupported = false;
-            vkGetPhysicalDeviceSurfaceSupportKHR(AvailablePhysicalDevice, j, Surface, &PresentFamilySupported);
-            
-            if(PresentFamilySupported)
-            {
-                
-                Temp_QueueFamilyIndices.PresentFamily.HasValue = true;
-                Temp_QueueFamilyIndices.PresentFamily.Value = j;
-                PresentFamilyExists = true;
-                
-            }
-            
-            if(GraphicsFamilyExists && PresentFamilyExists)
-            {
-                
-                RequiredQueueFamiliesSupported = true;
-                break;
-                
-            }
-        }
-        
-        
-        if(RequiredQueueFamiliesSupported)
-        {
-            
-            *PhysicalDevice = AvailablePhysicalDevice;
-            *QueueFamilyIndices = Temp_QueueFamilyIndices;
-            
-            break;
-            
-        }
-        
-    }
-    
-}
-
-internal void
-ChooseSwapchainImageFormat(VkSurfaceFormatKHR *SwapchainImageFormat, swapchain_support_details *SwapchainSupportDetails)
-{
-    u32 i;
-    b32 DesiredFormatFound = false;
-    for(i = 0; i < SwapchainSupportDetails->AvailableSurfaceFormatsCount; ++i)
-    {
-        if(SwapchainSupportDetails->AvailableSurfaceFormats[i].format == VK_FORMAT_B8G8R8A8_SRGB && SwapchainSupportDetails->AvailableSurfaceFormats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
-        {
-            *SwapchainImageFormat = SwapchainSupportDetails->AvailableSurfaceFormats[i];
-            DesiredFormatFound = true;
-        }
-    }
-    if(!DesiredFormatFound)
-    {
-        *SwapchainImageFormat = SwapchainSupportDetails.AvailableSurfaceFormats[0];
-    }
-}
-
-internal void
-ChooseSwapchainPresentMode(VkPresentModeKHR *SwapchainPresentMode)
-{
-    *SwapchainPresentMode = VK_PRESENT_MODE_FIFO_KHR;
-}
 
 internal SDL_AppResult
-ChooseSwapchainExtent(VkExtent2D *SwapchainExtent, swapchain_support_details *SwapchainSupportDetails, SDL_Window *Window)
+CreateImageViews(VkSwapchainKHR Swapchain, VkDevice LogicalDevice, arena *Transient, VkImageView **SwapchainImageViews, app_state *AppState, VkSurfaceFormatKHR SwapchainImageFormat)
 {
-    if(SwapchainSupportDetails->SurfaceCapabilities.currentExtent.width != UINT32_MAX)
-    {
-        *SwapchainExtent = SwapchainSupportDetails->SurfaceCapabilities.currentExtent;
-    }
-    else
-    {
-        i32 Width;
-        i32 Height;
-        VkExtent2D Extent;
-        if(!SDL_GetWindowSizeInPixels(Window, &Width, &Height))
-        {
-            SDL_Log("Failed to get window size in pixels: %s", SDL_GetError());
-            return SDL_APP_FAILURE;
-        }
-        Extent = (VkExtent2D) 
-        {
-            .width = (u32)width,
-            .height = (u32)height,
-        };
-        
-        Extent.width = Clamp(Extent.width, SwapchainSupportDetails->SurfaceCapabilities.minImageExtent.width, SwapchainSupportDetails->SurfaceCapabilities.maxImageExtent.width);
-        Extent.height = Clamp(Extent.height, SwapchainSupportDetails->SurfaceCapabilities.minImageExtent.height, SwapchainSupportDetails->SurfaceCapabilities.maxImageExtent.height);
-        
-        *SwapchainExtent = Extent;
-    }
-}
-
-internal void
-ChooseSwapchainImageCount(u32 *SwapchainImageCount, swapchain_support_details *SwapchainSupportDetails)
-{
-    *SwapchainImageCount = SwapchainSupportDetails->SurfaceCapabilities.minImageCount;
-    if(*SwapchainImageCount <= 2)
-    {
-        *SwapchainImageCount = 2;
-    }
-    if(SwapchainSupportDetails->SurfaceCapabilities.maxImageCount > 0 && *SwapchainImageCount > SwapchainSupportDetails->SurfaceCapabilities.maxImageCount)
-    {
-        *SwapchainImageCount = SwapchainSupportDetails->SurfaceCapabilities.maxImageCount;
-    }
     
-    Assert(*SwapchainImageCount == 2);
+    
+    
+    return SDL_APP_SUCCESS;
 }
 
-internal void
-ChooseSwapchainImageSharingMode(VkSharingMode *SwapchainImageSharingMode, u32 *SwapchainQueueFamilyIndexCount, u32 **SwapchainQueueFamilyIndices, arena *Transient, queue_family_indices *QueueFamilyIndices)
-{
-    if(QueueFamilyIndices->GraphicsFamily.Value != QueueFamilyIndices->PresentFamily.Value)
-    {
-        *SwapchainImageSharingMode = VK_SHARING_MODE_CONCURRENT;
-        *SwapchainQueueFamilyIndexCount = 2;
-        *SwapchainQueueFamilyIndices = PushArray(Transient, u32, 2);
-        (*SwapchainQueueFamilyIndices)[0] = QueueFamilyIndices->GraphicsFamily.Value;
-        (*SwapchainQueueFamilyIndices)[1] = QueueFamilyIndices->PresentFamily.Value;
-    }
-    else
-    {
-        *SwapchainImageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        *SwapchainQueueFamilyIndexCount = 0;
-        *SwapchainQueueFamilyIndices = NULL;
-    }
-}
+
+
+
+
 
