@@ -128,7 +128,6 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     u32 *SwapchainQueueFamilyIndices;
     VkSwapchainCreateInfoKHR SwapchainCreateInfo;
     
-    
     //================IMAGE VIEWS======================
     VkImageView *SwapchainImageViews;
     u32 SwapchainImageCount;
@@ -137,13 +136,32 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     VkImageSubresourceRange SubresourceRange;
     VkImageViewCreateInfo ImageViewCreateInfo;
     
-    
-    
-    
-    
-    
-    
-    
+    //==============GRAPHICS PIPELINE==================
+    char *VertexShaderPath;
+    char *FragmentShaderPath;
+    VkShaderModule VertexShaderModule;
+    VkShaderModule FragmentShaderModule;
+    VkPipelineShaderStageCreateInfo VertexShaderStageCreateInfo;
+    VkPipelineShaderStageCreateInfo FragmentShaderStageCreateInfo;
+    VkPipelineShaderStageCreateInfo ShaderStages[2];
+    VkPipelineVertexInputStateCreateInfo VertexInputCreateInfo;
+    VkPipelineInputAssemblyStateCreateInfo InputAssemblyStateCreateInfo;
+    VkViewport Viewport;
+    VkRect2D Scissor;
+    VkPipelineViewportStateCreateInfo ViewportStateCreateInfo;
+    VkPipelineRasterizationStateCreateInfo RasterizationStateCreateInfo;
+    VkPipelineMultisampleStateCreateInfo MultisampleStateCreateInfo;
+    VkPipelineColorBlendAttachmentState ColorBlendAttachmentState;
+    VkPipelineColorBlendStateCreateInfo ColorBlendStateCreateInfo;
+    VkPipelineLayoutCreateInfo PipelineLayoutCreateInfo;
+    VkPipelineLayout PipelineLayout;
+    VkAttachmentDescription ColorAttachmentDescription;
+    VkAttachmentReference ColorAttachmentReference;
+    VkSubpassDescription SubpassDescription;
+    VkRenderPass RenderPass;
+    VkRenderPassCreateInfo RenderPassCreateInfo;
+    VkGraphicsPipelineCreateInfo PipelineCreateInfo;
+    VkPipeline GraphicsPipeline;
     
     
     
@@ -341,7 +359,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     
     for(i = 0; i < (u32)ArrayCount(ExtraInstanceExtensionsNames); ++i)
     {
-        InstanceExtensions[InstanceExtensionsCount + i] = ExtraInstanceExtensions[i];
+        InstanceExtensions[InstanceExtensionsCount + i] = ExtraInstanceExtensionsNames[i];
     }
     
     InstanceExtensionsCount += ArrayCount(ExtraInstanceExtensionsNames);
@@ -530,7 +548,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
                     break;
                 }
             }
-            if(!RequiredDeviceExtensionsExists)
+            if(!RequiredDeviceExtensionExists)
             {
                 RequiredDeviceExtensionsAreSupported = false;
                 break;
@@ -760,8 +778,8 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         }
         Extent = (VkExtent2D) 
         {
-            .width = (u32)width,
-            .height = (u32)height,
+            .width = (u32)Width,
+            .height = (u32)Height,
         };
         
         Extent.width = Clamp(Extent.width, SwapchainSupportDetails.SurfaceCapabilities.minImageExtent.width, SwapchainSupportDetails.SurfaceCapabilities.maxImageExtent.width);
@@ -778,7 +796,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         MinimumSwapchainImageCount = SwapchainSupportDetails.SurfaceCapabilities.maxImageCount;
     }
     
-    Assert(*MinimumSwapchainImageCount == 2);
+    Assert(MinimumSwapchainImageCount == 2);
     
     
     //==================CHOOSE SWAPCHAIN IMAGE SHARING MODE============================
@@ -850,7 +868,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     SwapchainImageCount = 0;
     vkGetSwapchainImagesKHR(LogicalDevice, Swapchain, &SwapchainImageCount, NULL);
     Assert(SwapchainImageCount == 2);
-    SwapchainImages = PushArray(Transient, VkImage, SwapchainImageCount);
+    SwapchainImages = PushArray(&Transient, VkImage, SwapchainImageCount);
     vkGetSwapchainImagesKHR(LogicalDevice, Swapchain, &SwapchainImageCount, SwapchainImages);
     
     SwapchainImageViews = PushArray(&AppState->Eternal, VkImageView, SwapchainImageCount);
@@ -912,27 +930,16 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     
     
     
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    char *VertexShaderPath;
-    char *FragmentShaderPath;
+    //=================================================================================
+    //=================================================================================
+    //=============================GRAPHICS PIPELINE===================================
+    //=================================================================================
+    //=================================================================================
     SDL_asprintf(&VertexShaderPath, "%svert.spv", SDL_GetBasePath());
     SDL_asprintf(&FragmentShaderPath, "%sfrag.spv", SDL_GetBasePath());
     
-    VkShaderModule VertexShaderModule = LoadShaderModule(VertexShaderPath, &Transient, LogicalDevice);
-    VkShaderModule FragmentShaderModule = LoadShaderModule(FragmentShaderPath, &Transient, LogicalDevice);
+    VertexShaderModule = LoadShaderModule(VertexShaderPath, &Transient, LogicalDevice);
+    FragmentShaderModule = LoadShaderModule(FragmentShaderPath, &Transient, LogicalDevice);
     
     if(VertexShaderModule == VK_NULL_HANDLE || FragmentShaderModule == VK_NULL_HANDLE)
     {
@@ -940,7 +947,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         return SDL_APP_FAILURE;
     }
     
-    VkPipelineShaderStageCreateInfo VertexShaderStageCreateInfo = 
+    VertexShaderStageCreateInfo = (VkPipelineShaderStageCreateInfo)
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
         .pNext = NULL,
@@ -952,7 +959,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         
     };
     
-    VkPipelineShaderStageCreateInfo FragmentShaderStageCreateInfo = 
+    FragmentShaderStageCreateInfo = (VkPipelineShaderStageCreateInfo)
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
         .pNext = NULL,
@@ -964,9 +971,10 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         
     };
     
-    VkPipelineShaderStageCreateInfo ShaderStages[] = { VertexShaderStageCreateInfo, FragmentShaderStageCreateInfo };
+    ShaderStages[0] = VertexShaderStageCreateInfo;
+    ShaderStages[1] = FragmentShaderStageCreateInfo;
     
-    VkPipelineVertexInputStateCreateInfo VertexInputCreateInfo = 
+    VertexInputCreateInfo = (VkPipelineVertexInputStateCreateInfo)
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .pNext = NULL,
@@ -977,7 +985,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         .pVertexAttributeDescriptions = NULL,
     };
     
-    VkPipelineInputAssemblyStateCreateInfo InputAssemblyStateCreateInfo = 
+    InputAssemblyStateCreateInfo = (VkPipelineInputAssemblyStateCreateInfo)
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
         .pNext = NULL,
@@ -986,7 +994,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         .primitiveRestartEnable = VK_FALSE,
     };
     
-    VkViewport Viewport = 
+    Viewport = (VkViewport)
     {
         .x = 0.0f,
         .y = 0.0f,
@@ -995,13 +1003,14 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         .minDepth = 0.0f,
         .maxDepth = 1.0f,
     };
-    VkRect2D Scissor = 
+    
+    Scissor = (VkRect2D)
     {
         .offset = { 0, 0 },
         .extent = SwapchainExtent,
     };
     
-    VkPipelineViewportStateCreateInfo ViewportStateCreateInfo = 
+    ViewportStateCreateInfo = (VkPipelineViewportStateCreateInfo)
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
         .pNext = NULL,
@@ -1012,7 +1021,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         .pScissors = &Scissor,
     };
     
-    VkPipelineRasterizationStateCreateInfo RasterizationStateCreateInfo = 
+    RasterizationStateCreateInfo = (VkPipelineRasterizationStateCreateInfo)
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
         .pNext = NULL,
@@ -1030,7 +1039,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         
     };
     
-    VkPipelineMultisampleStateCreateInfo MultisampleStateCreateInfo = 
+    MultisampleStateCreateInfo = (VkPipelineMultisampleStateCreateInfo)
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
         .pNext = NULL,
@@ -1043,7 +1052,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         .alphaToOneEnable = VK_FALSE,
     };
     
-    VkPipelineColorBlendAttachmentState ColorBlendAttachmentState = 
+    ColorBlendAttachmentState = (VkPipelineColorBlendAttachmentState)
     {
         .blendEnable = VK_FALSE,
         .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
@@ -1056,7 +1065,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     };
     
     
-    VkPipelineColorBlendStateCreateInfo ColorBlendStateCreateInfo = 
+    ColorBlendStateCreateInfo = (VkPipelineColorBlendStateCreateInfo)
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
         .pNext = NULL,
@@ -1068,7 +1077,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         .blendConstants = { 0.0f, 0.0f, 0.0f, 0.0f },
     };
     
-    VkPipelineLayoutCreateInfo PipelineLayoutCreateInfo = 
+    PipelineLayoutCreateInfo = (VkPipelineLayoutCreateInfo)
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .pNext = NULL,
@@ -1079,18 +1088,14 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         .pPushConstantRanges = NULL,
     };
     
-    VkPipelineLayout PipelineLayout;
-    
+    Result = vkCreatePipelineLayout(LogicalDevice, &PipelineLayoutCreateInfo, NULL, &PipelineLayout);
+    if(Result != VK_SUCCESS)
     {
-        VkResult Result = vkCreatePipelineLayout(LogicalDevice, &PipelineLayoutCreateInfo, NULL, &PipelineLayout);
-        if(Result != VK_SUCCESS)
-        {
-            SDL_Log("Failed to create pipeline layout: %d", Result);
-            return SDL_APP_FAILURE;
-        }
+        SDL_Log("Failed to create pipeline layout: %d", Result);
+        return SDL_APP_FAILURE;
     }
     
-    VkAttachmentDescription ColorAttachmentDescription = 
+    ColorAttachmentDescription = (VkAttachmentDescription)
     {
         .flags = 0,
         .format = SwapchainImageFormat.format,
@@ -1103,13 +1108,13 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
     };
     
-    VkAttachmentReference ColorAttachmentReference = 
+    ColorAttachmentReference = (VkAttachmentReference)
     {
         .attachment = 0,
         .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
     };
     
-    VkSubpassDescription SubpassDescription = 
+    SubpassDescription = (VkSubpassDescription)
     {
         .flags = 0,
         .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -1123,9 +1128,9 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         .pPreserveAttachments = NULL,
     };
     
-    VkRenderPass RenderPass;
     
-    VkRenderPassCreateInfo RenderPassCreateInfo = 
+    
+    RenderPassCreateInfo = (VkRenderPassCreateInfo)
     {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
         .pNext = NULL,
@@ -1138,16 +1143,16 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         .pDependencies = NULL,
     };
     
+    
+    Result = vkCreateRenderPass(LogicalDevice, &RenderPassCreateInfo, NULL, &RenderPass);
+    if(Result != VK_SUCCESS)
     {
-        VkResult Result = vkCreateRenderPass(LogicalDevice, &RenderPassCreateInfo, NULL, &RenderPass);
-        if(Result != VK_SUCCESS)
-        {
-            SDL_Log("Failed to create render pass: %d", Result);
-            return SDL_APP_FAILURE;
-        }
+        SDL_Log("Failed to create render pass: %d", Result);
+        return SDL_APP_FAILURE;
     }
     
-    VkGraphicsPipelineCreateInfo PipelineCreateInfo = 
+    
+    PipelineCreateInfo = (VkGraphicsPipelineCreateInfo)
     {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .pNext = NULL,
@@ -1171,15 +1176,13 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         
     };
     
-    VkPipeline GraphicsPipeline;
+    Result = vkCreateGraphicsPipelines(LogicalDevice, VK_NULL_HANDLE, 1, &PipelineCreateInfo, NULL, &GraphicsPipeline);
+    if(Result != VK_SUCCESS)
     {
-        VkResult Result = vkCreateGraphicsPipelines(LogicalDevice, VK_NULL_HANDLE, 1, &PipelineCreateInfo, NULL, &GraphicsPipeline);
-        if(Result != VK_SUCCESS)
-        {
-            SDL_Log("Failed to create graphics pipeline: %d", Result);
-            return SDL_APP_FAILURE;
-        }
+        SDL_Log("Failed to create graphics pipeline: %d", Result);
+        return SDL_APP_FAILURE;
     }
+    
     
     
     
@@ -1228,7 +1231,7 @@ SDL_AppResult SDL_AppIterate(void *Data)
     
     if(AppState->GameUpdateAndRender)
     {
-        AppState->GameUpdateAndRender(&AppState->&AppState->Eternal, &AppState->Memory, &AppState->Input, &AppState->GameState);
+        AppState->GameUpdateAndRender(&AppState->Eternal, &AppState->Memory, &AppState->Input, &AppState->GameState);
     }
     
     

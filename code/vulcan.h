@@ -121,7 +121,6 @@ LoadShaderModule(char *ShaderPath, arena *Transient, VkDevice LogicalDevice)
         return VK_NULL_HANDLE;
     }
     
-    FileStatus;
     if(fstat(FileDescriptor, &FileStatus) == -1 || FileStatus.st_size <= 0 || (uintmax_t)FileStatus.st_size > SIZE_MAX || ((u64)FileStatus.st_size % sizeof(u32) != 0))
     {
         SDL_Log("Failed to get shader file status");
@@ -142,7 +141,7 @@ LoadShaderModule(char *ShaderPath, arena *Transient, VkDevice LogicalDevice)
             return VK_NULL_HANDLE;
         }
         
-        BytesRead += (size_t)Result;
+        BytesRead += (size_t)ReadResult;
     }
     
     close(FileDescriptor);
