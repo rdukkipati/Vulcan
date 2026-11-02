@@ -99,117 +99,44 @@ typedef struct swapchain_support_details
 
 
 
-//=================================================================================
-//==========================VALIDATION LAYER STUFF=================================
-//=================================================================================
-internal b32
-VerifyExtraInstanceExtensionsAreAvailable(const char **ExtraInstanceExtensionsNames, i32 ExtraInstanceExtensionsCount, VkExtensionProperties *AvailableInstanceExtensions,  u32 AvailableInstanceExtensionsCount)
-{
-    u32 i;
-    u32 j;
-    
-    b32 ExtraInstanceExtensionsAreAvailable;
-    b32 ExtraInstanceExtensionFound;
-    const char *ExtraInstanceExtensionName;
-    VkExtensionProperties *AvailableExtension;
-    
-    ExtraInstanceExtensionsAreAvailable = true;
-    for(i = 0; i < (u32)ExtraInstanceExtensionsCount; ++i)
-    {
-        ExtraInstanceExtensionFound = false;
-        ExtraInstanceExtensionName = ExtraInstanceExtensionsNames[i];
-        
-        for(j = 0; j < AvailableInstanceExtensionsCount; ++j)
-        {
-            
-            AvailableExtension = &AvailableInstanceExtensions[j];
-            if(strcmp(ExtraInstanceExtensionName, AvailableExtension->extensionName) == 0)
-            {
-                ExtraInstanceExtensionFound = true;
-                break;
-            }
-            
-        }
-        if(!ExtraInstanceExtensionFound)
-        {
-            ExtraInstanceExtensionsAreAvailable = false;
-            break;
-        }
-    }
-    
-    return ExtraInstanceExtensionsAreAvailable;
-    
-}
-
-internal b32
-VerifyRequiredValidationLayersAreAvailable(const char **RequiredValidationLayersNames, i32 RequiredValidationLayersCount, VkLayerProperties *AvailableLayers, u32 AvailableLayersCount)
-{
-    u32 i;
-    u32 j;
-    
-    b32 RequiredValidationLayersAreAvailable;
-    b32 RequiredLayerFound;
-    const char *RequiredValidationLayerName;
-    VkLayerProperties *AvailableLayer;
-    
-    
-    RequiredValidationLayersAreAvailable = true;
-    for(i = 0; i < (u32)RequiredValidationLayersCount; ++i)
-    {
-        
-        RequiredLayerFound = false;
-        RequiredValidationLayerName = RequiredValidationLayersNames[i];
-        
-        for(j = 0; j < AvailableLayersCount; ++j)
-        {
-            
-            AvailableLayer = &AvailableLayers[j];
-            if(strcmp(RequiredValidationLayerName, AvailableLayer->layerName) == 0)
-            {
-                RequiredLayerFound = true;
-                break;
-            }
-            
-        }
-        if(!RequiredLayerFound)
-        {
-            RequiredValidationLayersAreAvailable = false;
-            break;
-        }
-    }
-    
-    return RequiredValidationLayersAreAvailable;
-    
-}
-
 internal VkShaderModule 
 LoadShaderModule(char *ShaderPath, arena *Transient, VkDevice LogicalDevice)
 {
-    VkShaderModule ShaderModule = VK_NULL_HANDLE;
+    VkShaderModule ShaderModule;
+    i32 FileDescriptor;
+    struct stat FileStatus;
+    size_t FileSize;
+    char *ShaderBytes;
+    size_t BytesRead;
+    ssize_t ReadResult;
+    VkShaderModuleCreateInfo ShaderModuleCreateInfo;
+    VkResult Result;
     
-    i32 FileDescriptor = open(ShaderPath, O_RDONLY);
+    ShaderModule = VK_NULL_HANDLE;
+    
+    FileDescriptor = open(ShaderPath, O_RDONLY);
     if(FileDescriptor == -1)
     {
         SDL_Log("Failed to open shader .spv file");
         return VK_NULL_HANDLE;
     }
     
-    struct stat FileStatus;
+    FileStatus;
     if(fstat(FileDescriptor, &FileStatus) == -1 || FileStatus.st_size <= 0 || (uintmax_t)FileStatus.st_size > SIZE_MAX || ((u64)FileStatus.st_size % sizeof(u32) != 0))
     {
         SDL_Log("Failed to get shader file status");
         return VK_NULL_HANDLE;
     }
     
-    size_t FileSize = (size_t)FileStatus.st_size;
+    FileSize = (size_t)FileStatus.st_size;
     
-    char *ShaderBytes = PushArray(Transient, char, FileSize);
+    ShaderBytes = PushArray(Transient, char, FileSize);
     
-    size_t BytesRead = 0;
+    BytesRead = 0;
     while(BytesRead < FileSize)
     {
-        ssize_t Result = read(FileDescriptor, (char *)ShaderBytes + BytesRead, FileSize - BytesRead);
-        if(Result <= 0)
+        ReadResult = read(FileDescriptor, (char *)ShaderBytes + BytesRead, FileSize - BytesRead);
+        if(ReadResult <= 0)
         {
             SDL_Log("Failed to read bytes from shader .spv file");
             return VK_NULL_HANDLE;
@@ -220,7 +147,7 @@ LoadShaderModule(char *ShaderPath, arena *Transient, VkDevice LogicalDevice)
     
     close(FileDescriptor);
     
-    VkShaderModuleCreateInfo ShaderModuleCreateInfo = 
+    ShaderModuleCreateInfo = (VkShaderModuleCreateInfo) 
     {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .pNext = NULL,
@@ -229,30 +156,15 @@ LoadShaderModule(char *ShaderPath, arena *Transient, VkDevice LogicalDevice)
         .pCode = (u32 *)ShaderBytes,
     };
     
+    
+    Result = vkCreateShaderModule(LogicalDevice, &ShaderModuleCreateInfo, NULL, &ShaderModule);
+    if(Result != VK_SUCCESS)
     {
-        VkResult Result = vkCreateShaderModule(LogicalDevice, &ShaderModuleCreateInfo, NULL, &ShaderModule);
-        if(Result != VK_SUCCESS)
-        {
-            SDL_Log("Failed to create shader module");
-            return VK_NULL_HANDLE;
-        }
+        SDL_Log("Failed to create shader module");
+        return VK_NULL_HANDLE;
     }
+    
     
     return ShaderModule;
 }
-
-
-internal SDL_AppResult
-CreateImageViews(VkSwapchainKHR Swapchain, VkDevice LogicalDevice, arena *Transient, VkImageView **SwapchainImageViews, app_state *AppState, VkSurfaceFormatKHR SwapchainImageFormat)
-{
-    
-    
-    
-    return SDL_APP_SUCCESS;
-}
-
-
-
-
-
 

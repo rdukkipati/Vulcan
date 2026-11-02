@@ -54,9 +54,15 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     u32 AvailableInstanceExtensionsCount;
     VkExtensionProperties *AvailableInstanceExtensions;
     b32 ExtraInstanceExtensionsAreAvailable;
+    b32 ExtraInstanceExtensionFound;
+    const char *ExtraInstanceExtensionName;
+    const char *AvailableExtensionName;
     u32 AvailableLayersCount;
     VkLayerProperties *AvailableLayers;
     b32 RequiredValidationLayersAreAvailable;
+    b32 RequiredLayerFound;
+    const char *RequiredValidationLayerName;
+    const char *AvailableLayerName;
     const char **InstanceExtensions;
     u32 EnabledLayersCount;
     const char *const *EnabledLayersNames;
@@ -251,8 +257,26 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     AvailableInstanceExtensions = PushArray(&Transient, VkExtensionProperties, AvailableInstanceExtensionsCount);
     vkEnumerateInstanceExtensionProperties(NULL, &AvailableInstanceExtensionsCount, AvailableInstanceExtensions);
     
-    ExtraInstanceExtensionsAreAvailable = VerifyExtraInstanceExtensionsAreAvailable(ExtraInstanceExtensionsNames, ArrayCount(ExtraInstanceExtensionsNames), AvailableInstanceExtensions, AvailableInstanceExtensionsCount);
-    
+    ExtraInstanceExtensionsAreAvailable = true;
+    for(i = 0; i < (u32)ArrayCount(ExtraInstanceExtensionsNames); ++i)
+    {
+        ExtraInstanceExtensionFound = false;
+        ExtraInstanceExtensionName = ExtraInstanceExtensionsNames[i];
+        for(j = 0; j < AvailableInstanceExtensionsCount; ++j)
+        {
+            AvailableExtensionName = AvailableInstanceExtensions[j].extensionName;
+            if(strcmp(ExtraInstanceExtensionName, AvailableExtensionName) == 0)
+            {
+                ExtraInstanceExtensionFound = true;
+                break;
+            }
+        }
+        if(!ExtraInstanceExtensionFound)
+        {
+            ExtraInstanceExtensionsAreAvailable = false;
+            break;
+        }
+    }
     
     if(!ExtraInstanceExtensionsAreAvailable)
     {
@@ -267,7 +291,26 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     AvailableLayers = PushArray(&Transient, VkLayerProperties, AvailableLayersCount);
     vkEnumerateInstanceLayerProperties(&AvailableLayersCount, AvailableLayers);
     
-    RequiredValidationLayersAreAvailable = VerifyRequiredValidationLayersAreAvailable(RequiredValidationLayersNames, ArrayCount(RequiredValidationLayersNames), AvailableLayers, AvailableLayersCount);
+    RequiredValidationLayersAreAvailable = true;
+    for(i = 0; i < (u32)ArrayCount(RequiredValidationLayersNames); ++i)
+    {
+        RequiredLayerFound = false;
+        RequiredValidationLayerName = RequiredValidationLayersNames[i];
+        for(j = 0; j < AvailableLayersCount; ++j)
+        {
+            AvailableLayerName = AvailableLayers[j].layerName;
+            if(strcmp(RequiredValidationLayerName, AvailableLayerName) == 0)
+            {
+                RequiredLayerFound = true;
+                break;
+            }
+        }
+        if(!RequiredLayerFound)
+        {
+            RequiredValidationLayersAreAvailable = false;
+            break;
+        }
+    }
     
     if(!RequiredValidationLayersAreAvailable)
     {
