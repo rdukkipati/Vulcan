@@ -163,7 +163,22 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     VkGraphicsPipelineCreateInfo PipelineCreateInfo;
     VkPipeline GraphicsPipeline;
     
+    //=================FRAMEBUFFERS====================
+    VkFramebuffer *SwapchainFramebuffers;
+    VkImageView SwapchainFramebufferAttachments[1];
+    VkFramebufferCreateInfo SwapchainFramebufferCreateInfo;
     
+    //===============COMMBAND BUFFERS==================
+    VkQueue GraphicsQueue;
+    VkQueue PresentQueue;
+    VkCommandPoolCreateInfo CommandPoolCreateInfo;
+    VkCommandPool CommandPool;
+    VkCommandBufferAllocateInfo CommandBufferAllocateInfo;
+    VkCommandBuffer CommandBuffer;
+    VkCommandBufferBeginInfo CommandBufferBeginInfo;
+    VkRect2D RenderArea;
+    VkClearValue ClearColor;
+    VkRenderPassBeginInfo RenderPassBeginInfo;
     
     
     
@@ -941,6 +956,9 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     VertexShaderModule = LoadShaderModule(VertexShaderPath, &Transient, LogicalDevice);
     FragmentShaderModule = LoadShaderModule(FragmentShaderPath, &Transient, LogicalDevice);
     
+    SDL_free(VertexShaderPath);
+    SDL_free(FragmentShaderPath);
+    
     if(VertexShaderModule == VK_NULL_HANDLE || FragmentShaderModule == VK_NULL_HANDLE)
     {
         SDL_Log("Failed to create create shader module");
@@ -1183,14 +1201,176 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         return SDL_APP_FAILURE;
     }
     
+    vkDestroyShaderModule(LogicalDevice, VertexShaderModule, NULL);
+    vkDestroyShaderModule(LogicalDevice, FragmentShaderModule, NULL);
     
     
     
-    VkQueue GraphicsQueue;
+    
+    
+    
+    
+    
+    
+    
+    //=================================================================================
+    //=================================================================================
+    //================================FRAMEBUFFERS=====================================
+    //=================================================================================
+    //=================================================================================
+    SwapchainFramebuffers = PushArray(&AppState->Eternal, VkFramebuffer, SwapchainImageCount);
+    
+    for(i = 0; i < SwapchainImageCount, ++i)
+    {
+        SwapchainFramebufferAttachments[0] = SwapchainImageViews[i];
+        
+        SwapchainFramebufferCreateInfo = (VkFramebufferCreateInfo)
+        {
+            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .pNext = NULL,
+            .flags = 0,
+            .renderPass = RenderPass,
+            .attachmentCount = 1,
+            .pAttachments = SwapchainFramebufferAttachments,
+            .width = SwapchainExtent.width,
+            .height = SwapchainExtent.height,
+            .layers = 1,
+        };
+        
+        Result = vkCreateFramebuffer(LogicalDevice, &SwapchainFramebufferCreateInfo, NULL, &SwapchainFramebuffers[i]);
+        if(Result != VK_SUCCESS)
+        {
+            SDL_Log("Failed to create framebuffer: %d", Result);
+            return SDL_APP_FAILURE;
+        }
+    }
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    //=================================================================================
+    //=================================================================================
+    //=============================COMMAND BUFFERS=====================================
+    //=================================================================================
+    //=================================================================================
     vkGetDeviceQueue(LogicalDevice, QueueFamilyIndices.GraphicsFamily.Value, 0, &GraphicsQueue);
-    
-    VkQueue PresentQueue;
     vkGetDeviceQueue(LogicalDevice, QueueFamilyIndices.PresentFamily.Value, 0, &PresentQueue);
+    
+    
+    
+    CommandPoolCreateInfo = (VkCommandPoolCreateInfo)
+    {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .pNext = NULL,
+        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+        .queueFamilyIndex = QueueFamilyIndices.GraphicsFamily.Value,
+    };
+    
+    Result = vkCreateCommandPool(LogicalDevice, &CommandPoolCreateInfo, NULL, &CommandPool);
+    if(Result != VK_SUCCESS)
+    {
+        SDL_Log("Failed to create command pool: %d", Result);
+        return SDL_APP_FAILURE;
+    }
+    
+    CommandBufferAllocateInfo = (VkCommandBufferAllocateInfo)
+    {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .pNext = NULL,
+        .commandPool = CommandPool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1,
+    };
+    
+    Result = vkAllocateCommandBuffers(LogicalDevice, &CommandBufferAllocateInfo, &CommandBuffer);
+    if(Result != VK_SUCCESS)
+    {
+        SDL_Log("Failed to allocate command buffer: %d", Result);
+        return SDL_APP_FAILURE;
+    }
+    
+    CommandBufferBeginInfo = (VkCommandBufferBeginInfo)
+    {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .pInheritanceInfo = NULL,
+    };
+    
+    Result = vkBeginCommandBuffer(CommandBuffer, &CommandBufferBeginInfo);
+    if(Result != VK_SUCCESS)
+    {
+        SDL_Log("Failed to begin recording command buffer: %d", Result);
+        return SDL_APP_FAILURE;
+    }
+    
+    RenderArea = (VkRect2D)
+    {
+        .offset = { 0, 0 },
+        .extent = SwapchainExtent,
+    };
+    
+    ClearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+    
+    RenderPassBeginInfo = (VkRenderPassBeginInfo)
+    {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .pNext = NULL,
+        .renderPass = RenderPass,
+        .framebuffer = SwapchainFramebuffers[ImageIndex],
+        .renderArea = RenderArea,
+        .clearValueCount = 1,
+        .pClearValues = &ClearColor,
+    };
+    
+    vkCmdBeginRenderPass(CommandBuffer, &RenderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+    
+    vkCmdBindPipeline(CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GraphicsPipeline);
+    
+    vkCmdDraw(CommandBuffer, 3, 1, 0, 0);
+    
+    vkCmdEndRenderPass(CommandBuffer);
+    
+    Result = vkEndCommandBuffer(CommandBuffer);
+    if(Result != VK_SUCCESS)
+    {
+        SDL_Log("Failed to record command buffer: %d", Result);
+        return SDL_APP_FAILURE;
+    }
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
     
     
