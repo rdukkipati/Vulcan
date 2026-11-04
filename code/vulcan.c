@@ -166,6 +166,7 @@ int main(int argc, char *argv[])
     VkAttachmentReference ColorAttachmentReference;
     VkSubpassDescription SubpassDescription;
     VkRenderPass RenderPass;
+    VkSubpassDependency SubpassDependency;
     VkRenderPassCreateInfo RenderPassCreateInfo;
     VkGraphicsPipelineCreateInfo PipelineCreateInfo;
     VkPipeline GraphicsPipeline;
@@ -194,8 +195,11 @@ int main(int argc, char *argv[])
     VkFence FrameInFlightFence;
     
     
-    
-    
+    u32 SwapchainImageIndex;
+    VkSemaphore RenderingWaitSemaphores[] = { SwapchainImageAvailableSemaphore };
+    VkPipelineStageFlags RenderingWaitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+    VkSemaphore RenderingSignalSemaphores[] = { RenderingFinishedSemaphore };
+    VkSubmitInfo RenderingSubmitInfo;
     
     
     
@@ -1178,7 +1182,16 @@ int main(int argc, char *argv[])
         .pPreserveAttachments = NULL,
     };
     
-    
+    SubpassDependency = (VkSubpassDependency)
+    {
+        .srcSubpass = VK_SUBPASS_EXTERNAL,
+        .dstSubpass = 0,
+        .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        .srcAccessMask = 0,
+        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .dependencyFlags = 0,
+    };
     
     RenderPassCreateInfo = (VkRenderPassCreateInfo)
     {
@@ -1431,7 +1444,18 @@ int main(int argc, char *argv[])
     
     
     
-    
+    RenderingSubmitInfo = (VkSubmitInfo)
+    {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext = NULL,
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores = RenderingWaitSemaphores,
+        .pWaitDstStageMask = RenderingWaitStages,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &CommandBuffer,
+        .signalSemaphoreCount = 1,
+        .pSignalSemaphores = RenderingSignalSemaphores,
+    };
     
     
     
@@ -1486,50 +1510,24 @@ int main(int argc, char *argv[])
         
         
         
-        //===============COMMAND BUFFERS==================
         vkWaitForFences(LogicalDevice, 1, &FrameInFlightFence, VK_TRUE, UINT64_MAX);
         vkResetFences(LogicalDevice, 1, &FrameInFlightFence);
         
-        u32 SwapchainImageIndex;
+        
         vkAcquireNextImageKHR(LogicalDevice, Swapchain, UINT64_MAX, SwapchainImageAvailableSemaphore, VK_NULL_HANDLE, &SwapchainImageIndex);
         vkResetCommandBuffer(commandBuffer, 0);
         
         
         
-        VkSemaphore WaitSemaphores[] = { SwapchainImageAvailableSemaphore };
-        VkPipelineStageFlags WaitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-        VkSemaphore SignalSemaphores[] = { RenderingFinishedSemaphore };
         
-        VkSubmitInfo SubmitInfo = 
-        {
-            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            .pNext = NULL,
-            .waitSemaphoreCount = 1,
-            .pWaitSemaphores = WaitSemaphores,
-            .pWaitDstStageMask = WaitStages,
-            .commandBufferCount = 1,
-            .pCommandBuffers = &CommandBuffer,
-            .signalSemaphoreCount = 1,
-            .pSignalSemaphores = SignalSemaphores,
-        };
-        
-        Result = vkQueueSubmit(GraphicsQueue, 1, &SubmitInfo, FrameInFlightFence);
+        Result = vkQueueSubmit(GraphicsQueue, 1, &RenderingSubmitInfo, FrameInFlightFence);
         if(Result != VK_SUCCESS)
         {
             SDL_Log("Failed to submit draw command buffer : %d", Result);
             return SDL_APP_FAILURE;
         }
         
-        VkSubpassDependency SubpassDependency = 
-        {
-            .srcSubpass = VK_SUBPASS_EXTERNAL,
-            .dstSubpass = 0,
-            .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-            .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-            .srcAccessMask = 0,
-            .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-            .dependencyFlags = 0,
-        };
+        
         
         
         
