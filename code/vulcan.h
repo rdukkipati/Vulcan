@@ -1,25 +1,3 @@
-typedef struct app_state
-{
-    
-    VkDevice LogicalDevice;
-    
-    
-    u64 FrameStartTime;
-    
-    SDL_Time LastGameDLLWrite;
-    char *GameDLLPath;
-    SDL_SharedObject *GameDLL;
-    
-    memory Memory;
-    game_input Input;
-    game_state GameState;
-    
-    arena Eternal;
-    
-    game_update_and_render *GameUpdateAndRender;
-} app_state;
-
-
 internal SDL_Time
 SDL_GetLastWriteTime(const char *Filename)
 {
@@ -34,32 +12,29 @@ SDL_GetLastWriteTime(const char *Filename)
 }
 
 internal void
-SDL_LoadGameCode(void *Data)
+SDL_LoadGameCode(SDL_SharedObject **GameDLL, char *GameDLLPath, game_update_and_render **GameUpdateAndRender)
 {
-    app_state *AppState = (app_state *)Data;
-    
-    AppState->GameDLL = SDL_LoadObject(AppState->GameDLLPath);
-    if(AppState->GameDLL)
+    *GameDLL = SDL_LoadObject(GameDLLPath);
+    if(*GameDLL)
     {
-        AppState->GameUpdateAndRender = (game_update_and_render *)SDL_LoadFunction(AppState->GameDLL, "GameUpdateAndRender");
+        *GameUpdateAndRender = (game_update_and_render *)SDL_LoadFunction(*GameDLL, "GameUpdateAndRender");
     }
 }
 
 internal void
-SDL_UnloadGameCode(void *Data)
+SDL_UnloadGameCode(SDL_SharedObject **GameDLL, game_update_and_render **GameUpdateAndRender)
 {
-    app_state *AppState = (app_state *)Data;
-    
-    if(AppState->GameDLL)
+    if(*GameDLL)
     {
-        SDL_UnloadObject(AppState->GameDLL);
-        AppState->GameDLL = NULL;
+        SDL_UnloadObject(*GameDLL);
+        *GameDLL = NULL;
     }
-    AppState->GameUpdateAndRender = NULL;
+    *GameUpdateAndRender = NULL;
     
 }
 
-internal VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT MessageSeverity, VkDebugUtilsMessageTypeFlagsEXT MessageType, const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData)
+internal VKAPI_ATTR VkBool32 VKAPI_CALL 
+VulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT MessageSeverity, VkDebugUtilsMessageTypeFlagsEXT MessageType, const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData)
 {
     (void)MessageSeverity;
     (void)MessageType;

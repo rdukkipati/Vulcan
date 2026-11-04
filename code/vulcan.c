@@ -1,5 +1,4 @@
 #include <SDL3/SDL.h>
-#define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_vulkan.h>
 #include <vulkan/vulkan.h>
@@ -14,11 +13,21 @@
 #include "game.h"
 #include "vulcan.h"
 
-
-SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
+int main(int argc, char *argv[])
 {
-    (void)argc;
-    (void)argv;
+    
+    SDL_Event Event;
+    
+    u64 LastTick;
+    SDL_Time LastGameDLLWrite;
+    char *GameDLLPath;
+    SDL_SharedObject *GameDLL;
+    
+    game_input Input;
+    game_state GameState;
+    
+    
+    game_update_and_render *GameUpdateAndRender;
     
     u32 i;
     u32 j;
@@ -31,8 +40,6 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     void *BaseAddress;
     int Flag;
     arena Eternal;
-    
-    app_state *AppState;
     arena Transient;
     
     //================SDL WINDOW=======================
@@ -180,6 +187,17 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     VkClearValue ClearColor;
     VkRenderPassBeginInfo RenderPassBeginInfo;
     
+    VkSemaphoreCreateInfo SemaphoreCreateInfo;
+    VkFenceCreateInfo FenceCreateInfo;
+    VkSemaphore SwapchainImageAvailableSemaphore;
+    VkSemaphore RenderingFinishedSemaphore;
+    VkFence FrameInFlightFence;
+    
+    
+    
+    
+    
+    
     
     
     //=================================================================================
@@ -210,7 +228,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     if(Memory.PermanentStorage == MAP_FAILED)
     {
         SDL_Log("Memory allocate failed");
-        return SDL_APP_FAILURE;
+        return 1;
     }
     
     Eternal = (arena) 
@@ -219,17 +237,15 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         .RemainingSpace = Memory.PermanentStorageSize,
     };
     
-    AppState = PushStruct(&Eternal, app_state);
-    AppState->Memory = Memory;
-    AppState->Eternal = Eternal;
-    
-    *Data = AppState;
-    
     Transient = (arena)
     {
         .BaseAddress = Memory.TransientStorage,
         .RemainingSpace = Memory.TransientStorageSize,
     };
+    
+    
+    
+    
     
     
     
@@ -251,7 +267,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     if(!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))
     {
         SDL_Log("Couldn't initialize SDL: %s", SDL_GetError());
-        return SDL_APP_FAILURE;
+        return 1;
     }
     
 #define WINDOW_WIDTH 640
@@ -276,6 +292,10 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     
     
     
+    
+    
+    
+    
     //=================================================================================
     //=================================================================================
     //==========================VULKAN INSTANCE CREATION===============================
@@ -289,7 +309,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     if(!InstanceExtensions_SDL)
     {
         SDL_Log("Failed to get Vulkan Extensions for SDL: %s", SDL_GetError());
-        return SDL_APP_FAILURE;
+        return 1;
     }
     
     
@@ -327,7 +347,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     if(!ExtraInstanceExtensionsAreAvailable)
     {
         SDL_Log("Extra Extensions not available");
-        return SDL_APP_FAILURE;
+        return 1;
     }
     
     //==================VERIFY VALIDATION LAYERS AVAILABLE=============================
@@ -361,7 +381,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     if(!RequiredValidationLayersAreAvailable)
     {
         SDL_Log("Validation Layers not available");
-        return SDL_APP_FAILURE;
+        return 1;
     }
     
     //==================COMBINE SDL & EXTRA EXTENSIONS=================================
@@ -439,8 +459,10 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     if(Result != VK_SUCCESS)
     {
         SDL_Log("vkCreateInstance failed: %d", Result);
-        return SDL_APP_FAILURE;
+        return 1;
     }
+    
+    
     
     
     
@@ -463,20 +485,17 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     if(!CreateDebugUtilsMessenger)
     {
         SDL_Log("Loading CreateDebugUtilsMessengerEXT function failed");
-        return SDL_APP_FAILURE;
+        return 1;
     }
     
     Result = CreateDebugUtilsMessenger(VulkanInstance, &DebugUtilsMessengerCreateInfo, NULL, &DebugUtilsMessenger);
     if(Result != VK_SUCCESS)
     {
         SDL_Log("Creating debug messenger failed: %d", Result);
-        return SDL_APP_FAILURE;
+        return 1;
     };
     
 #endif
-    
-    
-    
     
     
     
@@ -515,6 +534,8 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     
     
     
+    
+    
     //=================================================================================
     //=================================================================================
     //=========================PHYSICAL DEVICE SELECTION===============================
@@ -528,7 +549,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     if(AvailablePhysicalDevicesCount == 0)
     {
         SDL_Log("Failed to find GPUs with Vulkan support!");
-        return SDL_APP_FAILURE;
+        return 1;
     }
     
     AvailablePhysicalDevices = PushArray(&Transient, VkPhysicalDevice, AvailablePhysicalDevicesCount);
@@ -645,8 +666,19 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     if(PhysicalDevice == VK_NULL_HANDLE)
     {
         SDL_Log("Failed to find suitable GPU among available options!");
-        return SDL_APP_FAILURE;
+        return 1;
     }
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
     
     
@@ -737,8 +769,9 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     if(Result != VK_SUCCESS)
     {
         SDL_Log("Logical device creation failed");
-        return SDL_APP_FAILURE;
+        return 1;
     }
+    
     
     
     
@@ -860,7 +893,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     if(Result != VK_SUCCESS)
     {
         SDL_Log("Swapchain creation failed: %d", Result);
-        return SDL_APP_FAILURE;
+        return 1;
     }
     
     
@@ -886,7 +919,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     SwapchainImages = PushArray(&Transient, VkImage, SwapchainImageCount);
     vkGetSwapchainImagesKHR(LogicalDevice, Swapchain, &SwapchainImageCount, SwapchainImages);
     
-    SwapchainImageViews = PushArray(&AppState->Eternal, VkImageView, SwapchainImageCount);
+    SwapchainImageViews = PushArray(&Eternal, VkImageView, SwapchainImageCount);
     
     Components = (VkComponentMapping)
     {
@@ -924,10 +957,9 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         if(Result != VK_SUCCESS)
         {
             SDL_Log("Failed to create image view: %d", Result);
-            return SDL_APP_FAILURE;
+            return 1;
         }
     }
-    
     
     
     
@@ -1157,8 +1189,8 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         .pAttachments = &ColorAttachmentDescription,
         .subpassCount = 1,
         .pSubpasses = &SubpassDescription,
-        .dependencyCount = 0,
-        .pDependencies = NULL,
+        .dependencyCount = 1,
+        .pDependencies = &SubpassDependency,
     };
     
     
@@ -1166,7 +1198,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     if(Result != VK_SUCCESS)
     {
         SDL_Log("Failed to create render pass: %d", Result);
-        return SDL_APP_FAILURE;
+        return 1;
     }
     
     
@@ -1198,11 +1230,12 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     if(Result != VK_SUCCESS)
     {
         SDL_Log("Failed to create graphics pipeline: %d", Result);
-        return SDL_APP_FAILURE;
+        return 1;
     }
     
     vkDestroyShaderModule(LogicalDevice, VertexShaderModule, NULL);
     vkDestroyShaderModule(LogicalDevice, FragmentShaderModule, NULL);
+    
     
     
     
@@ -1218,7 +1251,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     //================================FRAMEBUFFERS=====================================
     //=================================================================================
     //=================================================================================
-    SwapchainFramebuffers = PushArray(&AppState->Eternal, VkFramebuffer, SwapchainImageCount);
+    SwapchainFramebuffers = PushArray(&Eternal, VkFramebuffer, SwapchainImageCount);
     
     for(i = 0; i < SwapchainImageCount, ++i)
     {
@@ -1241,12 +1274,9 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
         if(Result != VK_SUCCESS)
         {
             SDL_Log("Failed to create framebuffer: %d", Result);
-            return SDL_APP_FAILURE;
+            return 1;
         }
     }
-    
-    
-    
     
     
     
@@ -1286,7 +1316,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     if(Result != VK_SUCCESS)
     {
         SDL_Log("Failed to create command pool: %d", Result);
-        return SDL_APP_FAILURE;
+        return 1;
     }
     
     CommandBufferAllocateInfo = (VkCommandBufferAllocateInfo)
@@ -1302,7 +1332,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     if(Result != VK_SUCCESS)
     {
         SDL_Log("Failed to allocate command buffer: %d", Result);
-        return SDL_APP_FAILURE;
+        return 1;
     }
     
     CommandBufferBeginInfo = (VkCommandBufferBeginInfo)
@@ -1317,7 +1347,7 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     if(Result != VK_SUCCESS)
     {
         SDL_Log("Failed to begin recording command buffer: %d", Result);
-        return SDL_APP_FAILURE;
+        return 1;
     }
     
     RenderArea = (VkRect2D)
@@ -1351,84 +1381,216 @@ SDL_AppResult SDL_AppInit(void **Data, int argc, char *argv[])
     if(Result != VK_SUCCESS)
     {
         SDL_Log("Failed to record command buffer: %d", Result);
-        return SDL_APP_FAILURE;
+        return 1;
     }
     
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    SDL_asprintf(&AppState->GameDLLPath, "%sgame.so", SDL_GetBasePath());
-    SDL_LoadGameCode((void *)AppState);
-    AppState->LastGameDLLWrite = SDL_GetLastWriteTime(AppState->GameDLLPath);
-    
-    return SDL_APP_CONTINUE;
-    
-}
-
-SDL_AppResult SDL_AppEvent(void *Data, SDL_Event *Event)
-{
-    (void)Data;
-    
-    if(Event->type == SDL_EVENT_QUIT)
+    SemaphoreCreateInfo = (VkSemaphoreCreateInfo)
     {
-        return SDL_APP_SUCCESS;
-    }
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        .pNext = NULL,
+        .flags = 0,
+    };
     
-    return SDL_APP_CONTINUE;
-}
-
-SDL_AppResult SDL_AppIterate(void *Data)
-{
-    app_state *AppState = (app_state *)Data;
-    
-    
-    SDL_Time NewGameDLLWrite = SDL_GetLastWriteTime(AppState->GameDLLPath);
-    if(NewGameDLLWrite != AppState->LastGameDLLWrite)
+    FenceCreateInfo = (VkFenceCreateInfo)
     {
-        AppState->LastGameDLLWrite = NewGameDLLWrite;
-        SDL_UnloadGameCode(Data);
-        SDL_LoadGameCode(Data);
-    }
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        .pNext = NULL,
+        .flags = VK_FENCE_CREATE_SIGNALED_BIT,
+    };
     
-    
-    
-    if(AppState->GameUpdateAndRender)
+    Result = vkCreateSemaphore(LogicalDevice, &SemaphoreCreateInfo, NULL, &SwapchainImageAvailableSemaphore);
+    if(Result != VK_SUCCESS)
     {
-        AppState->GameUpdateAndRender(&AppState->Eternal, &AppState->Memory, &AppState->Input, &AppState->GameState);
+        SDL_Log("Failed to create swapchain image available semaphore: %d", Result);
+        return 1;
+    }
+    
+    Result = vkCreateSemaphore(LogicalDevice, &SemaphoreCreateInfo, NULL, &RenderingFinishedSemaphore);
+    if(Result != VK_SUCCESS)
+    {
+        SDL_Log("Failed to create rendering finished semaphore: %d", Result);
+        return 1;
+    }
+    
+    Result = vkCreateFence(LogicalDevice, &FenceCreateInfo, NULL, &FrameInFlightFence);
+    if(Result != VK_SUCCESS)
+    {
+        SDL_Log("Failed to create frame in flight fence: %d", Result);
+        return 1;
     }
     
     
     
-    return SDL_APP_CONTINUE;
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    SDL_asprintf(&GameDLLPath, "%sgame.so", SDL_GetBasePath());
+    SDL_LoadGameCode(&GameDLL, GameDLLPath, &GameUpdateAndRender);
+    LastGameDLLWrite = SDL_GetLastWriteTime(GameDLLPath);
+    
+    
+    
+    
+    
+    
+    while(true)
+    {
+        
+        while(SDL_PollEvent(&Event))
+        {
+            switch(Event.type)
+            {
+                case SDL_EVENT_QUIT:
+                {
+                    return 0;
+                }break;
+                
+                default:
+                {
+                    
+                }break;
+            }
+        }
+        
+        
+        SDL_Time NewGameDLLWrite = SDL_GetLastWriteTime(GameDLLPath);
+        if(NewGameDLLWrite != LastGameDLLWrite)
+        {
+            LastGameDLLWrite = NewGameDLLWrite;
+            SDL_UnloadGameCode(&GameDLL, &GameUpdateAndRender);
+            SDL_LoadGameCode(&GameDLL, GameDLLPath, &GameUpdateAndRender);
+        }
+        
+        if(!GameUpdateAndRender)
+        {
+            SDL_Log("Failed to load game update and render");
+            return 1;
+        }
+        
+        GameUpdateAndRender(&Eternal, &Memory, &Input, &GameState);
+        
+        
+        
+        
+        //===============COMMAND BUFFERS==================
+        vkWaitForFences(LogicalDevice, 1, &FrameInFlightFence, VK_TRUE, UINT64_MAX);
+        vkResetFences(LogicalDevice, 1, &FrameInFlightFence);
+        
+        u32 SwapchainImageIndex;
+        vkAcquireNextImageKHR(LogicalDevice, Swapchain, UINT64_MAX, SwapchainImageAvailableSemaphore, VK_NULL_HANDLE, &SwapchainImageIndex);
+        vkResetCommandBuffer(commandBuffer, 0);
+        
+        
+        
+        VkSemaphore WaitSemaphores[] = { SwapchainImageAvailableSemaphore };
+        VkPipelineStageFlags WaitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+        VkSemaphore SignalSemaphores[] = { RenderingFinishedSemaphore };
+        
+        VkSubmitInfo SubmitInfo = 
+        {
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .pNext = NULL,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = WaitSemaphores,
+            .pWaitDstStageMask = WaitStages,
+            .commandBufferCount = 1,
+            .pCommandBuffers = &CommandBuffer,
+            .signalSemaphoreCount = 1,
+            .pSignalSemaphores = SignalSemaphores,
+        };
+        
+        Result = vkQueueSubmit(GraphicsQueue, 1, &SubmitInfo, FrameInFlightFence);
+        if(Result != VK_SUCCESS)
+        {
+            SDL_Log("Failed to submit draw command buffer : %d", Result);
+            return SDL_APP_FAILURE;
+        }
+        
+        VkSubpassDependency SubpassDependency = 
+        {
+            .srcSubpass = VK_SUBPASS_EXTERNAL,
+            .dstSubpass = 0,
+            .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .srcAccessMask = 0,
+            .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            .dependencyFlags = 0,
+        };
+        
+        
+        
+        
+        
+        
+        
+        
+    }
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    return 0;
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
 }
-
-void SDL_AppQuit(void *Data, SDL_AppResult Result)
-{
-    (void)Data;
-    (void)Result;
-}
-
-
-
-
-
 
 
 
