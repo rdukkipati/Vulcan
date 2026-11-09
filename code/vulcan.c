@@ -18,7 +18,9 @@ int main(int argc, char *argv[])
     
     SDL_Event Event;
     
-    u64 LastTick;
+    u64 StartTime;
+    u64 EndTime;
+    
     SDL_Time LastGameDLLWrite;
     char *GameDLLPath;
     SDL_SharedObject *GameDLL;
@@ -35,37 +37,29 @@ int main(int argc, char *argv[])
     
     VkResult Result;
     
-    //==================MEMORY=========================
+    //==================MEMORY========================
     memory Memory;
     void *BaseAddress;
     int Flag;
     arena Eternal;
     arena Transient;
     
-    //================SDL WINDOW=======================
+    //================SDL WINDOW======================
     SDL_Window *Window;
     
-    //================VULKAN INSTANCE==================
-    VkInstance VulkanInstance;
-    const char *ExtraInstanceExtensionsNames[] = 
-    {
-        VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
-        
-    };
-    const char *RequiredValidationLayersNames[] = 
-    {
-        "VK_LAYER_KHRONOS_validation",
-    };
+    //================VULKAN INSTANCE=================
     u32 InstanceExtensionsCount;
     const char *const *InstanceExtensions_SDL;
     u32 AvailableInstanceExtensionsCount;
     VkExtensionProperties *AvailableInstanceExtensions;
+    const char *ExtraInstanceExtensionsNames[1];
     b32 ExtraInstanceExtensionsAreAvailable;
     b32 ExtraInstanceExtensionFound;
     const char *ExtraInstanceExtensionName;
     const char *AvailableExtensionName;
     u32 AvailableLayersCount;
     VkLayerProperties *AvailableLayers;
+    const char *RequiredValidationLayersNames[1];
     b32 RequiredValidationLayersAreAvailable;
     b32 RequiredLayerFound;
     const char *RequiredValidationLayerName;
@@ -77,26 +71,23 @@ int main(int argc, char *argv[])
     const void *pNext;
     VkApplicationInfo AppInfo;
     VkInstanceCreateInfo VulkanInstanceCreateInfo;
+    VkInstance VulkanInstance;
     
-    //================DEBUG MESSENGER==================
+    //================DEBUG MESSENGER=================
     VkDebugUtilsMessengerEXT DebugUtilsMessenger;
     PFN_vkCreateDebugUtilsMessengerEXT CreateDebugUtilsMessenger; 
     
-    //===================SURFACE=======================
+    //===================SURFACE======================
     VkSurfaceKHR Surface;
     
-    //================PHYSICAL DEVICE==================
-    VkPhysicalDevice PhysicalDevice;
-    const char *RequiredDeviceExtensionsNames[] = 
-    {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-    };
+    //================PHYSICAL DEVICE=================
     queue_family_indices QueueFamilyIndices;
     u32 AvailablePhysicalDevicesCount;
     VkPhysicalDevice *AvailablePhysicalDevices;
     VkPhysicalDevice AvailablePhysicalDevice;
     u32 AvailableDeviceExtensionsCount;
     VkExtensionProperties *AvailableDeviceExtensions;
+    const char *RequiredDeviceExtensionsNames[1];
     b32 RequiredDeviceExtensionsAreSupported;
     const char *RequiredDeviceExtensionName;
     b32 RequiredDeviceExtensionExists;
@@ -110,9 +101,9 @@ int main(int argc, char *argv[])
     b32 PresentFamilyExists;
     VkQueueFamilyProperties *AvailableQueueFamily;
     VkBool32 PresentFamilySupported;
+    VkPhysicalDevice PhysicalDevice;
     
-    //================LOGICAL DEVICE===================
-    VkDevice LogicalDevice;
+    //================LOGICAL DEVICE==================
     u32 MaximumQueueFamilyIndicesCount = ArrayCount(QueueFamilyIndices.E);
     optional_u32 UniqueQueueFamilyIndices[MaximumQueueFamilyIndicesCount]; 
     optional_u32 Family;
@@ -122,9 +113,9 @@ int main(int argc, char *argv[])
     VkDeviceQueueCreateInfo *QueueCreateInfos;
     VkPhysicalDeviceFeatures LogicalDeviceFeatures;
     VkDeviceCreateInfo LogicalDeviceCreateInfo;
+    VkDevice LogicalDevice;
     
-    //==================SWAPCHAIN======================
-    VkSwapchainKHR Swapchain;
+    //==================SWAPCHAIN=====================
     b32 DesiredFormatFound;
     VkSurfaceFormatKHR SwapchainImageFormat;
     VkPresentModeKHR SwapchainPresentMode;
@@ -134,8 +125,9 @@ int main(int argc, char *argv[])
     u32 SwapchainQueueFamilyIndexCount;
     u32 *SwapchainQueueFamilyIndices;
     VkSwapchainCreateInfoKHR SwapchainCreateInfo;
+    VkSwapchainKHR Swapchain;
     
-    //================IMAGE VIEWS======================
+    //================IMAGE VIEWS=====================
     VkImageView *SwapchainImageViews;
     u32 SwapchainImageCount;
     VkImage *SwapchainImages;
@@ -143,7 +135,7 @@ int main(int argc, char *argv[])
     VkImageSubresourceRange SubresourceRange;
     VkImageViewCreateInfo ImageViewCreateInfo;
     
-    //==============GRAPHICS PIPELINE==================
+    //==============GRAPHICS PIPELINE=================
     char *VertexShaderPath;
     char *FragmentShaderPath;
     VkShaderModule VertexShaderModule;
@@ -171,44 +163,48 @@ int main(int argc, char *argv[])
     VkGraphicsPipelineCreateInfo PipelineCreateInfo;
     VkPipeline GraphicsPipeline;
     
-    //=================FRAMEBUFFERS====================
+    //=================FRAMEBUFFERS===================
     VkFramebuffer *SwapchainFramebuffers;
     VkImageView SwapchainFramebufferAttachments[1];
     VkFramebufferCreateInfo SwapchainFramebufferCreateInfo;
     
-    //===============COMMBAND BUFFERS==================
+    //===============COMMBAND BUFFERS=================
     VkQueue GraphicsQueue;
     VkQueue PresentQueue;
     VkCommandPoolCreateInfo CommandPoolCreateInfo;
     VkCommandPool CommandPool;
     VkCommandBufferAllocateInfo CommandBufferAllocateInfo;
     VkCommandBuffer CommandBuffer;
-    VkCommandBufferBeginInfo CommandBufferBeginInfo;
-    VkRect2D RenderArea;
-    VkClearValue ClearColor;
-    VkRenderPassBeginInfo RenderPassBeginInfo;
     
-    VkSemaphoreCreateInfo SemaphoreCreateInfo;
-    VkFenceCreateInfo FenceCreateInfo;
+    //===============SYNCHRONIZATION==================
+    VkSemaphoreCreateInfo;
+    VkFenceCreateInfo; 
     VkSemaphore SwapchainImageAvailableSemaphore;
     VkSemaphore RenderingFinishedSemaphore;
     VkFence FrameInFlightFence;
+    VkSemaphore RenderingWaitSemaphores[1];
+    VkPipelineStageFlags RenderingWaitStages[1];
+    VkSemaphore RenderingSignalSemaphores[1];
     
-    
-    u32 SwapchainImageIndex;
-    VkSemaphore RenderingWaitSemaphores[] = { SwapchainImageAvailableSemaphore };
-    VkPipelineStageFlags RenderingWaitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-    VkSemaphore RenderingSignalSemaphores[] = { RenderingFinishedSemaphore };
+    //=======COMMAND RECORDING INITIALIZATION=========
+    VkCommandBufferBeginInfo CommandBufferBeginInfo;
+    VkRect2D RenderArea;
+    VkClearValue ClearColor;
     VkSubmitInfo RenderingSubmitInfo;
     
+    //==============COMMAND RECORDING=================
+    u32 SwapchainImageIndex;
+    VkRenderPassBeginInfo RenderPassBeginInfo;
     
     
     
-    //=================================================================================
-    //=================================================================================
-    //=============================INITIALIZE MEMORY===================================
-    //=================================================================================
-    //=================================================================================
+    
+    
+    //========================================================================
+    //========================================================================
+    //====================INITIALIZE MEMORY===================================
+    //========================================================================
+    //========================================================================
     Memory = (memory)
     {
         .PermanentStorageSize = Gigabytes(1),
@@ -260,11 +256,11 @@ int main(int argc, char *argv[])
     
     
     
-    //=================================================================================
-    //=================================================================================
-    //=========================INITIALIZE SDL & WINDOW=================================
-    //=================================================================================
-    //=================================================================================
+    //========================================================================
+    //========================================================================
+    //=====================INITIALIZE SDL & WINDOW============================
+    //========================================================================
+    //========================================================================
     
     SDL_SetAppMetadata("Vulcan", "1.0", "com.example.vulcan");
     
@@ -300,14 +296,14 @@ int main(int argc, char *argv[])
     
     
     
-    //=================================================================================
-    //=================================================================================
-    //==========================VULKAN INSTANCE CREATION===============================
-    //=================================================================================
-    //=================================================================================
+    //========================================================================
+    //========================================================================
+    //=================VULKAN INSTANCE CREATION===============================
+    //========================================================================
+    //========================================================================
     
     
-    //=======================GRAB SDL EXTENSIONS FOR VULKAN============================
+    //========GRAB SDL EXTENSIONS FOR VULKAN==========
     InstanceExtensionsCount = 0;
     InstanceExtensions_SDL = SDL_Vulkan_GetInstanceExtensions(&InstanceExtensionsCount);
     if(!InstanceExtensions_SDL)
@@ -320,12 +316,14 @@ int main(int argc, char *argv[])
     
 #if DEBUG
     
-    //==================VERIFY EXTRA EXTENSIONS AVAILABLE==============================
+    //=======VERIFY EXTRA EXTENSIONS AVAILABLE========
     AvailableInstanceExtensionsCount = 0;
     vkEnumerateInstanceExtensionProperties(NULL, &AvailableInstanceExtensionsCount, NULL);
     
     AvailableInstanceExtensions = PushArray(&Transient, VkExtensionProperties, AvailableInstanceExtensionsCount);
     vkEnumerateInstanceExtensionProperties(NULL, &AvailableInstanceExtensionsCount, AvailableInstanceExtensions);
+    
+    ExtraInstanceExtensionsNames[0] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
     
     ExtraInstanceExtensionsAreAvailable = true;
     for(i = 0; i < (u32)ArrayCount(ExtraInstanceExtensionsNames); ++i)
@@ -354,12 +352,14 @@ int main(int argc, char *argv[])
         return 1;
     }
     
-    //==================VERIFY VALIDATION LAYERS AVAILABLE=============================
+    //========VERIFY VALIDATION LAYERS AVAILABLE======
     AvailableLayersCount = 0;
     vkEnumerateInstanceLayerProperties(&AvailableLayersCount, NULL);
     
     AvailableLayers = PushArray(&Transient, VkLayerProperties, AvailableLayersCount);
     vkEnumerateInstanceLayerProperties(&AvailableLayersCount, AvailableLayers);
+    
+    RequiredValidationLayersNames[0] = "VK_LAYER_KHRONOS_validation";
     
     RequiredValidationLayersAreAvailable = true;
     for(i = 0; i < (u32)ArrayCount(RequiredValidationLayersNames); ++i)
@@ -388,7 +388,7 @@ int main(int argc, char *argv[])
         return 1;
     }
     
-    //==================COMBINE SDL & EXTRA EXTENSIONS=================================
+    //========COMBINE SDL & EXTRA EXTENSIONS==========
     InstanceExtensions = PushArray(&Transient, const char *, InstanceExtensionsCount + ArrayCount(ExtraInstanceExtensionsNames));
     
     for(i = 0; i < InstanceExtensionsCount; ++i)
@@ -403,8 +403,8 @@ int main(int argc, char *argv[])
     
     InstanceExtensionsCount += ArrayCount(ExtraInstanceExtensionsNames);
     
-    //==================SETUP OTHER VULKAN INSTANCE====================================
-    //========================CREATE INFO STUFF========================================
+    //=======SETUP OTHER VULKAN INSTANCE==============
+    //===========CREATE INFO STUFF====================
     EnabledLayersCount = ArrayCount(RequiredValidationLayersNames);
     EnabledLayersNames = RequiredValidationLayersNames;
     
@@ -423,7 +423,7 @@ int main(int argc, char *argv[])
     
 #else
     
-    //==================NO VALIDATION LAYERS OR DEBUG EXTENSIONS=======================
+    //====NO VALIDATION LAYERS OR DEBUG EXTENSIONS====
     InstanceExtensions = Extensions_SDL;
     EnabledLayersCount = 0;
     EnabledLayersNames = NULL;
@@ -432,7 +432,7 @@ int main(int argc, char *argv[])
     
 #endif
     
-    //==========================CREATE VULKAN INSTANCE=================================
+    //==========CREATE VULKAN INSTANCE================
     AppInfo = (VkApplicationInfo)
     {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -478,11 +478,11 @@ int main(int argc, char *argv[])
     
     
     
-    //=================================================================================
-    //=================================================================================
-    //==========================CREATE DEBUG MESSENGER=================================
-    //=================================================================================
-    //=================================================================================
+    //========================================================================
+    //========================================================================
+    //=====================CREATE DEBUG MESSENGER=============================
+    //========================================================================
+    //========================================================================
 #if DEBUG
     
     CreateDebugUtilsMessenger = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(VulkanInstance, "vkCreateDebugUtilsMessengerEXT");
@@ -512,11 +512,11 @@ int main(int argc, char *argv[])
     
     
     
-    //=================================================================================
-    //=================================================================================
-    //==========================WINDOW SURFACE CREATION================================
-    //=================================================================================
-    //=================================================================================
+    //========================================================================
+    //========================================================================
+    //====================WINDOW SURFACE CREATION=============================
+    //========================================================================
+    //========================================================================
     if(!SDL_Vulkan_CreateSurface(Window, VulkanInstance, NULL, &Surface))
     {
         SDL_Log("Failed to create surface: %s", SDL_GetError());
@@ -540,11 +540,11 @@ int main(int argc, char *argv[])
     
     
     
-    //=================================================================================
-    //=================================================================================
-    //=========================PHYSICAL DEVICE SELECTION===============================
-    //=================================================================================
-    //=================================================================================
+    //========================================================================
+    //========================================================================
+    //======================PHYSICAL DEVICE SELECTION=========================
+    //========================================================================
+    //========================================================================
     
     ZeroStruct(QueueFamilyIndices);
     
@@ -559,13 +559,13 @@ int main(int argc, char *argv[])
     AvailablePhysicalDevices = PushArray(&Transient, VkPhysicalDevice, AvailablePhysicalDevicesCount);
     vkEnumeratePhysicalDevices(VulkanInstance, &AvailablePhysicalDevicesCount, AvailablePhysicalDevices);
     
-    //======================CHOOSE PHYSICAL DEVICE=====================================
+    //===========CHOOSE PHYSICAL DEVICE===============
     PhysicalDevice = VK_NULL_HANDLE;
     
     for(i = 0; i < AvailablePhysicalDevicesCount; ++i)
     {
-        //========================VERIFY REQUIRED PHYSICAL DEVICE==========================
-        //===========================EXTENSIONS ARE AVAILABLE==============================
+        //=====VERIFY REQUIRED PHYSICAL DEVICE========
+        //========EXTENSIONS ARE AVAILABLE============
         AvailablePhysicalDevice = AvailablePhysicalDevices[i];
         AvailableDeviceExtensionsCount = 0;
         AvailableDeviceExtensions = NULL;
@@ -573,6 +573,8 @@ int main(int argc, char *argv[])
         vkEnumerateDeviceExtensionProperties(AvailablePhysicalDevice, NULL, &AvailableDeviceExtensionsCount, NULL);
         AvailableDeviceExtensions = PushArray(&Transient, VkExtensionProperties, AvailableDeviceExtensionsCount);
         vkEnumerateDeviceExtensionProperties(AvailablePhysicalDevice, NULL, &AvailableDeviceExtensionsCount, AvailableDeviceExtensions);
+        
+        RequiredDeviceExtensionsNames[0] = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
         
         RequiredDeviceExtensionsAreSupported = true;
         for(j = 0; j < (u32)ArrayCount(RequiredDeviceExtensionsNames); ++j)
@@ -600,7 +602,7 @@ int main(int argc, char *argv[])
             continue;
         }
         
-        //========================CHECK SWAPCHAIN SUPPORT==================================
+        //=========CHECK SWAPCHAIN SUPPORT============
         ZeroStruct(SwapchainSupportDetails);
         vkGetPhysicalDeviceSurfaceCapabilitiesKHR(AvailablePhysicalDevice, Surface, &SwapchainSupportDetails.SurfaceCapabilities);
         vkGetPhysicalDeviceSurfaceFormatsKHR(AvailablePhysicalDevice, Surface, &SwapchainSupportDetails.AvailableSurfaceFormatsCount, NULL);
@@ -620,8 +622,8 @@ int main(int argc, char *argv[])
             continue;
         }
         
-        //========================CHECK FOR REQUIRED=======================================
-        //==========================QUEUE FAMILIES=========================================
+        //==========CHECK FOR REQUIRED================
+        //============QUEUE FAMILIES==================
         ZeroStruct(Temp_QueueFamilyIndices);
         
         AvailableQueueFamiliesCount = 0;
@@ -695,13 +697,13 @@ int main(int argc, char *argv[])
     
     
     
-    //=================================================================================
-    //=================================================================================
-    //=========================LOGICAL DEVICE CREATION=================================
-    //=================================================================================
-    //=================================================================================
+    //========================================================================
+    //========================================================================
+    //==============LOGICAL DEVICE CREATION===================================
+    //========================================================================
+    //========================================================================
     
-    //=====================COUNT UNIQUE QUEUE FAMILIES=================================
+    //==========COUNT UNIQUE QUEUE FAMILIES===========
     ZeroArray(UniqueQueueFamilyIndices, MaximumQueueFamilyIndicesCount);
     
     UniqueQueueFamilyIndicesCount = 0;
@@ -734,7 +736,7 @@ int main(int argc, char *argv[])
     
     Assert(UniqueQueueFamilyIndicesCount <= MaximumQueueFamilyIndicesCount);
     
-    //======================UNIQUE QUEUE CREATE INFOS==================================
+    //=========UNIQUE QUEUE CREATE INFOS==============
     QueueCreateInfos = PushArray(&Transient, VkDeviceQueueCreateInfo, UniqueQueueFamilyIndicesCount);
     
     QueuePriority = 1.0f;
@@ -751,7 +753,7 @@ int main(int argc, char *argv[])
         };
     }
     
-    //======================LOGICAL DEVICE CREATION====================================
+    //==========LOGICAL DEVICE CREATION===============
     ZeroStruct(LogicalDeviceFeatures);
     
     LogicalDeviceCreateInfo = (VkDeviceCreateInfo)
@@ -787,13 +789,13 @@ int main(int argc, char *argv[])
     
     
     
-    //=================================================================================
-    //=================================================================================
-    //============================CREATE SWAPCHAIN=====================================
-    //================================================================================= 
-    //================================================================================= 
+    //========================================================================
+    //========================================================================
+    //========================CREATE SWAPCHAIN================================
+    //========================================================================
+    //========================================================================
     
-    //======================CHOOSE SWAPCHAIN IMAGE FORMAT==============================
+    //=======CHOOSE SWAPCHAIN IMAGE FORMAT============
     DesiredFormatFound = false;
     for(i = 0; i < SwapchainSupportDetails.AvailableSurfaceFormatsCount; ++i)
     {
@@ -810,10 +812,10 @@ int main(int argc, char *argv[])
     
     
     
-    //======================CHOOSE SWAPCHAIN PRESENT MODE==============================
+    //========CHOOSE SWAPCHAIN PRESENT MODE===========
     SwapchainPresentMode = VK_PRESENT_MODE_FIFO_KHR;
     
-    //=========================CHOOSE SWAPCHAIN EXTENT=================================
+    //=========CHOOSE SWAPCHAIN EXTENT================
     if(SwapchainSupportDetails.SurfaceCapabilities.currentExtent.width != UINT32_MAX)
     {
         SwapchainExtent = SwapchainSupportDetails.SurfaceCapabilities.currentExtent;
@@ -840,7 +842,7 @@ int main(int argc, char *argv[])
         SwapchainExtent = Extent;
     }
     
-    //==================CHOOSE MINIMUM SWAPCHAIN IMAGE COUNT===========================
+    //======CHOOSE MINIMUM SWAPCHAIN IMAGE COUNT======
     MinimumSwapchainImageCount = SwapchainSupportDetails.SurfaceCapabilities.minImageCount;
     
     if(SwapchainSupportDetails.SurfaceCapabilities.maxImageCount > 0 && MinimumSwapchainImageCount > SwapchainSupportDetails.SurfaceCapabilities.maxImageCount)
@@ -851,7 +853,7 @@ int main(int argc, char *argv[])
     Assert(MinimumSwapchainImageCount == 2);
     
     
-    //==================CHOOSE SWAPCHAIN IMAGE SHARING MODE============================
+    //======CHOOSE SWAPCHAIN IMAGE SHARING MODE=======
     if(QueueFamilyIndices.GraphicsFamily.Value != QueueFamilyIndices.PresentFamily.Value)
     {
         SwapchainImageSharingMode = VK_SHARING_MODE_CONCURRENT;
@@ -869,7 +871,7 @@ int main(int argc, char *argv[])
     
     
     
-    //=========================CREATE SWAPCHAIN========================================
+    //===============CREATE SWAPCHAIN=================
     SwapchainCreateInfo = (VkSwapchainCreateInfoKHR)
     {
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR ,
@@ -912,11 +914,11 @@ int main(int argc, char *argv[])
     
     
     
-    //=================================================================================
-    //=================================================================================
-    //===========================CREATE IMAGE VIEWS====================================
-    //=================================================================================
-    //=================================================================================
+    //========================================================================
+    //========================================================================
+    //=======================CREATE IMAGE VIEWS===============================
+    //========================================================================
+    //========================================================================
     SwapchainImageCount = 0;
     vkGetSwapchainImagesKHR(LogicalDevice, Swapchain, &SwapchainImageCount, NULL);
     Assert(SwapchainImageCount == 2);
@@ -981,11 +983,11 @@ int main(int argc, char *argv[])
     
     
     
-    //=================================================================================
-    //=================================================================================
-    //=============================GRAPHICS PIPELINE===================================
-    //=================================================================================
-    //=================================================================================
+    //========================================================================
+    //========================================================================
+    //======================GRAPHICS PIPELINE=================================
+    //========================================================================
+    //========================================================================
     SDL_asprintf(&VertexShaderPath, "%svert.spv", SDL_GetBasePath());
     SDL_asprintf(&FragmentShaderPath, "%sfrag.spv", SDL_GetBasePath());
     
@@ -1259,11 +1261,11 @@ int main(int argc, char *argv[])
     
     
     
-    //=================================================================================
-    //=================================================================================
-    //================================FRAMEBUFFERS=====================================
-    //=================================================================================
-    //=================================================================================
+    //========================================================================
+    //========================================================================
+    //==========================FRAMEBUFFERS==================================
+    //========================================================================
+    //========================================================================
     SwapchainFramebuffers = PushArray(&Eternal, VkFramebuffer, SwapchainImageCount);
     
     for(i = 0; i < SwapchainImageCount, ++i)
@@ -1307,16 +1309,18 @@ int main(int argc, char *argv[])
     
     
     
-    //=================================================================================
-    //=================================================================================
-    //=============================COMMAND BUFFERS=====================================
-    //=================================================================================
-    //=================================================================================
+    //========================================================================
+    //========================================================================
+    //=========================COMMAND BUFFERS================================
+    //========================================================================
+    //========================================================================
+    
+    //=================GRAB QUEUES====================
     vkGetDeviceQueue(LogicalDevice, QueueFamilyIndices.GraphicsFamily.Value, 0, &GraphicsQueue);
     vkGetDeviceQueue(LogicalDevice, QueueFamilyIndices.PresentFamily.Value, 0, &PresentQueue);
     
     
-    
+    //===============COMMAND POOL=====================
     CommandPoolCreateInfo = (VkCommandPoolCreateInfo)
     {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -1332,6 +1336,7 @@ int main(int argc, char *argv[])
         return 1;
     }
     
+    //===============COMMAND BUFFER===================
     CommandBufferAllocateInfo = (VkCommandBufferAllocateInfo)
     {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -1348,54 +1353,11 @@ int main(int argc, char *argv[])
         return 1;
     }
     
-    CommandBufferBeginInfo = (VkCommandBufferBeginInfo)
-    {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .pNext = NULL,
-        .flags = 0,
-        .pInheritanceInfo = NULL,
-    };
-    
-    Result = vkBeginCommandBuffer(CommandBuffer, &CommandBufferBeginInfo);
-    if(Result != VK_SUCCESS)
-    {
-        SDL_Log("Failed to begin recording command buffer: %d", Result);
-        return 1;
-    }
-    
-    RenderArea = (VkRect2D)
-    {
-        .offset = { 0, 0 },
-        .extent = SwapchainExtent,
-    };
-    
-    ClearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
-    
-    RenderPassBeginInfo = (VkRenderPassBeginInfo)
-    {
-        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-        .pNext = NULL,
-        .renderPass = RenderPass,
-        .framebuffer = SwapchainFramebuffers[ImageIndex],
-        .renderArea = RenderArea,
-        .clearValueCount = 1,
-        .pClearValues = &ClearColor,
-    };
-    
-    vkCmdBeginRenderPass(CommandBuffer, &RenderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-    
-    vkCmdBindPipeline(CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GraphicsPipeline);
-    
-    vkCmdDraw(CommandBuffer, 3, 1, 0, 0);
-    
-    vkCmdEndRenderPass(CommandBuffer);
-    
-    Result = vkEndCommandBuffer(CommandBuffer);
-    if(Result != VK_SUCCESS)
-    {
-        SDL_Log("Failed to record command buffer: %d", Result);
-        return 1;
-    }
+    //========================================================================
+    //========================================================================
+    //=========================SYNCHRONIZATION================================
+    //========================================================================
+    //========================================================================
     
     SemaphoreCreateInfo = (VkSemaphoreCreateInfo)
     {
@@ -1408,9 +1370,10 @@ int main(int argc, char *argv[])
     {
         .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
         .pNext = NULL,
-        .flags = VK_FENCE_CREATE_SIGNALED_BIT,
+        .flags = 0,
     };
     
+    //===============CREATE SEMAPHORES================
     Result = vkCreateSemaphore(LogicalDevice, &SemaphoreCreateInfo, NULL, &SwapchainImageAvailableSemaphore);
     if(Result != VK_SUCCESS)
     {
@@ -1425,6 +1388,7 @@ int main(int argc, char *argv[])
         return 1;
     }
     
+    //=================CREATE FENCE===================
     Result = vkCreateFence(LogicalDevice, &FenceCreateInfo, NULL, &FrameInFlightFence);
     if(Result != VK_SUCCESS)
     {
@@ -1432,17 +1396,26 @@ int main(int argc, char *argv[])
         return 1;
     }
     
+    RenderingWaitSemaphores[0] = SwapchainImageAvailableSemaphore;
+    RenderingWaitStages[0] = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    RenderingSignalSemaphores[0] = RenderingFinishedSemaphore;
     
+    //=======COMMAND RECORDING INITIALIZATION=========
+    CommandBufferBeginInfo = (VkCommandBufferBeginInfo)
+    {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .pInheritanceInfo = NULL,
+    };
     
+    RenderArea = (VkRect2D)
+    {
+        .offset = { 0, 0 },
+        .extent = SwapchainExtent,
+    };
     
-    
-    
-    
-    
-    
-    
-    
-    
+    ClearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
     
     RenderingSubmitInfo = (VkSubmitInfo)
     {
@@ -1462,18 +1435,27 @@ int main(int argc, char *argv[])
     
     
     
+    
+    
+    
+    
+    
+    
+    
+    //==============FINAL SETUP=======================
     SDL_asprintf(&GameDLLPath, "%sgame.so", SDL_GetBasePath());
     SDL_LoadGameCode(&GameDLL, GameDLLPath, &GameUpdateAndRender);
     LastGameDLLWrite = SDL_GetLastWriteTime(GameDLLPath);
     
+    StartTime = SDL_GetPerformanceCounter();
     
     
     
-    
-    
+    //==============GAME LOOP=========================
     while(true)
     {
         
+        //==============EVENT POLLING=================
         while(SDL_PollEvent(&Event))
         {
             switch(Event.type)
@@ -1490,7 +1472,7 @@ int main(int argc, char *argv[])
             }
         }
         
-        
+        //==========HOT RELOAD GAME CODE==============
         SDL_Time NewGameDLLWrite = SDL_GetLastWriteTime(GameDLLPath);
         if(NewGameDLLWrite != LastGameDLLWrite)
         {
@@ -1499,6 +1481,7 @@ int main(int argc, char *argv[])
             SDL_LoadGameCode(&GameDLL, GameDLLPath, &GameUpdateAndRender);
         }
         
+        //===============GAME RENDER==================
         if(!GameUpdateAndRender)
         {
             SDL_Log("Failed to load game update and render");
@@ -1509,16 +1492,42 @@ int main(int argc, char *argv[])
         
         
         
-        
-        vkWaitForFences(LogicalDevice, 1, &FrameInFlightFence, VK_TRUE, UINT64_MAX);
-        vkResetFences(LogicalDevice, 1, &FrameInFlightFence);
-        
-        
+        //=============COMMAND RECORDING==============
         vkAcquireNextImageKHR(LogicalDevice, Swapchain, UINT64_MAX, SwapchainImageAvailableSemaphore, VK_NULL_HANDLE, &SwapchainImageIndex);
         vkResetCommandBuffer(commandBuffer, 0);
         
+        Result = vkBeginCommandBuffer(CommandBuffer, &CommandBufferBeginInfo);
+        if(Result != VK_SUCCESS)
+        {
+            SDL_Log("Failed to begin recording command buffer: %d", Result);
+            return 1;
+        }
         
+        RenderPassBeginInfo = (VkRenderPassBeginInfo)
+        {
+            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            .pNext = NULL,
+            .renderPass = RenderPass,
+            .framebuffer = SwapchainFramebuffers[ImageIndex],
+            .renderArea = RenderArea,
+            .clearValueCount = 1,
+            .pClearValues = &ClearColor,
+        };
         
+        vkCmdBeginRenderPass(CommandBuffer, &RenderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+        
+        vkCmdBindPipeline(CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GraphicsPipeline);
+        
+        vkCmdDraw(CommandBuffer, 3, 1, 0, 0);
+        
+        vkCmdEndRenderPass(CommandBuffer);
+        
+        Result = vkEndCommandBuffer(CommandBuffer);
+        if(Result != VK_SUCCESS)
+        {
+            SDL_Log("Failed to record command buffer: %d", Result);
+            return 1;
+        }
         
         Result = vkQueueSubmit(GraphicsQueue, 1, &RenderingSubmitInfo, FrameInFlightFence);
         if(Result != VK_SUCCESS)
@@ -1530,28 +1539,31 @@ int main(int argc, char *argv[])
         
         
         
+        //==============FRAME TIMING==================
+        vkWaitForFences(LogicalDevice, 1, &FrameInFlightFence, VK_TRUE, UINT64_MAX);
+        vkResetFences(LogicalDevice, 1, &FrameInFlightFence);
         
         
         
         
+        
+        EndTime = SDL_GetPerformanceCounter();
+        ElapsedSeconds = (f64)(EndTime - StartTime) / SDL_GetPerformanceFrequency();
+        
+        if(ElapsedSeconds < TargetSecondsPerFrame)
+        {
+            u64 SleepNanoseconds = (u64)((TargetSecondsPerFrame - ElapsedSeconds) * 1e9);
+            SDL_DelayPrecise(SleepNanoseconds);
+            
+        }
+        
+        EndTime = SDL_GetPerformanceCounter();
+        ElapsedSeconds = (f64)(EndTime - StartTime) / SDL_GetPerformanceFrequency();
+        StartTime = EndTime;
+        SDL_Log("%.3f seconds", ElapsedSeconds);
         
         
     }
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
     
     
     

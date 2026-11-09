@@ -182,5 +182,6 @@ typedef struct game_state
 #define GAME_UPDATE_AND_RENDER(name) void name(arena *Eternal, memory *Memory, game_input *Input, game_state *GameState)
 typedef GAME_UPDATE_AND_RENDER(game_update_and_render);
 
+// TODO: replace with some sort of intrinsic?
 #define Clamp(Value, Min, Max) ((Value) < (Min) ? (Min) : ((Value) > (Max) ? (Max) : (Value)))
 
