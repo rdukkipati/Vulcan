@@ -282,8 +282,8 @@ int main(int argc, char *argv[])
         return 1;
     }
     
-#define WINDOW_WIDTH 640
-#define WINDOW_HEIGHT 480
+#define WINDOW_WIDTH 960
+#define WINDOW_HEIGHT 540
     
     Window = SDL_CreateWindow("Vulcan", WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_VULKAN);
     
@@ -1587,7 +1587,6 @@ int main(int argc, char *argv[])
         {
             SleepNanoseconds = (u64)((TargetSecondsPerFrame - ElapsedSeconds) * 1e9);
             SDL_DelayPrecise(SleepNanoseconds);
-            
         }
         
         EndTime = SDL_GetPerformanceCounter();
