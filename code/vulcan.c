@@ -1593,7 +1593,7 @@ int main(int argc, char *argv[])
         EndTime = SDL_GetPerformanceCounter();
         ElapsedSeconds = (f64)(EndTime - StartTime) / (f64)SDL_GetPerformanceFrequency();
         StartTime = EndTime;
-        SDL_Log("%.3f seconds", ElapsedSeconds);
+        SDL_Log("%.6f seconds", ElapsedSeconds);
         
         
     }
