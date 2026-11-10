@@ -16,20 +16,17 @@
 int main(int argc, char *argv[])
 {
     
+    
     SDL_Event Event;
     
-    u64 StartTime;
-    u64 EndTime;
     
-    SDL_Time LastGameDLLWrite;
-    char *GameDLLPath;
-    SDL_SharedObject *GameDLL;
+    
     
     game_input Input;
     game_state GameState;
     
     
-    game_update_and_render *GameUpdateAndRender;
+    
     
     u32 i;
     u32 j;
@@ -177,24 +174,39 @@ int main(int argc, char *argv[])
     VkCommandBuffer CommandBuffer;
     
     //===============SYNCHRONIZATION==================
-    VkSemaphoreCreateInfo;
-    VkFenceCreateInfo; 
-    VkSemaphore SwapchainImageAvailableSemaphore;
-    VkSemaphore RenderingFinishedSemaphore;
+    VkSemaphoreCreateInfo SemaphoreCreateInfo;
+    VkFenceCreateInfo FenceCreateInfo; 
+    VkSemaphore RenderingWaitSemaphore;
+    VkSemaphore RenderingSignalSemaphores[2];
     VkFence FrameInFlightFence;
-    VkSemaphore RenderingWaitSemaphores[1];
-    VkPipelineStageFlags RenderingWaitStages[1];
-    VkSemaphore RenderingSignalSemaphores[1];
+    VkPipelineStageFlags RenderingWaitStage;
     
     //=======COMMAND RECORDING INITIALIZATION=========
     VkCommandBufferBeginInfo CommandBufferBeginInfo;
     VkRect2D RenderArea;
     VkClearValue ClearColor;
-    VkSubmitInfo RenderingSubmitInfo;
+    
+    //================HOT RELOADING===================
+    char *GameDLLPath;
+    SDL_SharedObject *GameDLL;
+    game_update_and_render *GameUpdateAndRender;
+    SDL_Time LastGameDLLWrite;
+    SDL_Time NewGameDLLWrite;
     
     //==============COMMAND RECORDING=================
     u32 SwapchainImageIndex;
     VkRenderPassBeginInfo RenderPassBeginInfo;
+    VkSubmitInfo RenderingSubmitInfo;
+    VkPresentInfoKHR PresentInfo;
+    
+    //===============FRAME TIMING=====================
+    f64 TargetSecondsPerFrame;
+    u64 StartTime;
+    u64 EndTime;
+    f64 ElapsedSeconds;
+    u64 SleepNanoseconds;
+    
+    
     
     
     
@@ -1268,7 +1280,7 @@ int main(int argc, char *argv[])
     //========================================================================
     SwapchainFramebuffers = PushArray(&Eternal, VkFramebuffer, SwapchainImageCount);
     
-    for(i = 0; i < SwapchainImageCount, ++i)
+    for(i = 0; i < SwapchainImageCount; ++i)
     {
         SwapchainFramebufferAttachments[0] = SwapchainImageViews[i];
         
@@ -1374,18 +1386,22 @@ int main(int argc, char *argv[])
     };
     
     //===============CREATE SEMAPHORES================
-    Result = vkCreateSemaphore(LogicalDevice, &SemaphoreCreateInfo, NULL, &SwapchainImageAvailableSemaphore);
+    Result = vkCreateSemaphore(LogicalDevice, &SemaphoreCreateInfo, NULL, &RenderingWaitSemaphore);
     if(Result != VK_SUCCESS)
     {
         SDL_Log("Failed to create swapchain image available semaphore: %d", Result);
         return 1;
     }
     
-    Result = vkCreateSemaphore(LogicalDevice, &SemaphoreCreateInfo, NULL, &RenderingFinishedSemaphore);
-    if(Result != VK_SUCCESS)
+    // NOTE: one rendering finished semaphore per swapchain image. Not strictly necessary given my frame timing, but it satisfies the vulkan spec and validation layers
+    for(i = 0; i < SwapchainImageCount; ++i)
     {
-        SDL_Log("Failed to create rendering finished semaphore: %d", Result);
-        return 1;
+        Result = vkCreateSemaphore(LogicalDevice, &SemaphoreCreateInfo, NULL, &RenderingSignalSemaphores[i]);
+        if(Result != VK_SUCCESS)
+        {
+            SDL_Log("Failed to create rendering finished semaphore: %d", Result);
+            return 1;
+        }
     }
     
     //=================CREATE FENCE===================
@@ -1396,9 +1412,12 @@ int main(int argc, char *argv[])
         return 1;
     }
     
-    RenderingWaitSemaphores[0] = SwapchainImageAvailableSemaphore;
-    RenderingWaitStages[0] = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    RenderingSignalSemaphores[0] = RenderingFinishedSemaphore;
+    
+    
+    
+    RenderingWaitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    
+    
     
     //=======COMMAND RECORDING INITIALIZATION=========
     CommandBufferBeginInfo = (VkCommandBufferBeginInfo)
@@ -1415,20 +1434,8 @@ int main(int argc, char *argv[])
         .extent = SwapchainExtent,
     };
     
-    ClearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+    ClearColor = (VkClearValue){{{0.0f, 0.0f, 0.0f, 1.0f}}};
     
-    RenderingSubmitInfo = (VkSubmitInfo)
-    {
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .pNext = NULL,
-        .waitSemaphoreCount = 1,
-        .pWaitSemaphores = RenderingWaitSemaphores,
-        .pWaitDstStageMask = RenderingWaitStages,
-        .commandBufferCount = 1,
-        .pCommandBuffers = &CommandBuffer,
-        .signalSemaphoreCount = 1,
-        .pSignalSemaphores = RenderingSignalSemaphores,
-    };
     
     
     
@@ -1446,6 +1453,8 @@ int main(int argc, char *argv[])
     SDL_asprintf(&GameDLLPath, "%sgame.so", SDL_GetBasePath());
     SDL_LoadGameCode(&GameDLL, GameDLLPath, &GameUpdateAndRender);
     LastGameDLLWrite = SDL_GetLastWriteTime(GameDLLPath);
+    
+    TargetSecondsPerFrame = 1.0 / 30.0;
     
     StartTime = SDL_GetPerformanceCounter();
     
@@ -1473,7 +1482,7 @@ int main(int argc, char *argv[])
         }
         
         //==========HOT RELOAD GAME CODE==============
-        SDL_Time NewGameDLLWrite = SDL_GetLastWriteTime(GameDLLPath);
+        NewGameDLLWrite = SDL_GetLastWriteTime(GameDLLPath);
         if(NewGameDLLWrite != LastGameDLLWrite)
         {
             LastGameDLLWrite = NewGameDLLWrite;
@@ -1493,8 +1502,8 @@ int main(int argc, char *argv[])
         
         
         //=============COMMAND RECORDING==============
-        vkAcquireNextImageKHR(LogicalDevice, Swapchain, UINT64_MAX, SwapchainImageAvailableSemaphore, VK_NULL_HANDLE, &SwapchainImageIndex);
-        vkResetCommandBuffer(commandBuffer, 0);
+        vkAcquireNextImageKHR(LogicalDevice, Swapchain, UINT64_MAX, RenderingWaitSemaphore, VK_NULL_HANDLE, &SwapchainImageIndex);
+        vkResetCommandBuffer(CommandBuffer, 0);
         
         Result = vkBeginCommandBuffer(CommandBuffer, &CommandBufferBeginInfo);
         if(Result != VK_SUCCESS)
@@ -1508,7 +1517,7 @@ int main(int argc, char *argv[])
             .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
             .pNext = NULL,
             .renderPass = RenderPass,
-            .framebuffer = SwapchainFramebuffers[ImageIndex],
+            .framebuffer = SwapchainFramebuffers[SwapchainImageIndex],
             .renderArea = RenderArea,
             .clearValueCount = 1,
             .pClearValues = &ClearColor,
@@ -1529,6 +1538,20 @@ int main(int argc, char *argv[])
             return 1;
         }
         
+        RenderingSubmitInfo = (VkSubmitInfo)
+        {
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .pNext = NULL,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = &RenderingWaitSemaphore,
+            .pWaitDstStageMask = &RenderingWaitStage,
+            .commandBufferCount = 1,
+            .pCommandBuffers = &CommandBuffer,
+            .signalSemaphoreCount = 1,
+            .pSignalSemaphores = &RenderingSignalSemaphores[SwapchainImageIndex],
+        };
+        
+        
         Result = vkQueueSubmit(GraphicsQueue, 1, &RenderingSubmitInfo, FrameInFlightFence);
         if(Result != VK_SUCCESS)
         {
@@ -1536,6 +1559,19 @@ int main(int argc, char *argv[])
             return SDL_APP_FAILURE;
         }
         
+        PresentInfo = (VkPresentInfoKHR)
+        {
+            .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+            .pNext = NULL,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = &RenderingSignalSemaphores[SwapchainImageIndex],
+            .swapchainCount = 1,
+            .pSwapchains = &Swapchain,
+            .pImageIndices = &SwapchainImageIndex,
+            .pResults = NULL,
+        };
+        
+        vkQueuePresentKHR(PresentQueue, &PresentInfo);
         
         
         
@@ -1544,21 +1580,18 @@ int main(int argc, char *argv[])
         vkResetFences(LogicalDevice, 1, &FrameInFlightFence);
         
         
-        
-        
-        
         EndTime = SDL_GetPerformanceCounter();
-        ElapsedSeconds = (f64)(EndTime - StartTime) / SDL_GetPerformanceFrequency();
+        ElapsedSeconds = (f64)(EndTime - StartTime) / (f64)SDL_GetPerformanceFrequency();
         
         if(ElapsedSeconds < TargetSecondsPerFrame)
         {
-            u64 SleepNanoseconds = (u64)((TargetSecondsPerFrame - ElapsedSeconds) * 1e9);
+            SleepNanoseconds = (u64)((TargetSecondsPerFrame - ElapsedSeconds) * 1e9);
             SDL_DelayPrecise(SleepNanoseconds);
             
         }
         
         EndTime = SDL_GetPerformanceCounter();
-        ElapsedSeconds = (f64)(EndTime - StartTime) / SDL_GetPerformanceFrequency();
+        ElapsedSeconds = (f64)(EndTime - StartTime) / (f64)SDL_GetPerformanceFrequency();
         StartTime = EndTime;
         SDL_Log("%.3f seconds", ElapsedSeconds);
         
